@@ -1,0 +1,57 @@
+# Notices for OpenSOVD-native-server
+
+This content is produced and maintained by the Eclipse OpenSOVD project.
+
+* Project home: https://github.com/eclipse-opensovd
+
+## Copyright
+
+Copyright (c) 2024 Contributors to the Eclipse OpenSOVD project.
+See the NOTICE file(s) distributed with this work for additional
+information regarding copyright ownership.
+
+## License
+
+This program and the accompanying materials are made available under the
+terms of the Apache License, Version 2.0 which is available at
+https://www.apache.org/licenses/LICENSE-2.0
+
+SPDX-License-Identifier: Apache-2.0
+
+## Related Eclipse OpenSOVD Projects
+
+* [opensovd](https://github.com/eclipse-opensovd/opensovd) — Main repository, design docs
+* [opensovd-core](https://github.com/eclipse-opensovd/opensovd-core) — Server, Client, Gateway (C++)
+* [classic-diagnostic-adapter](https://github.com/eclipse-opensovd/classic-diagnostic-adapter) — CDA (Rust)
+* [cpp-bindings](https://github.com/eclipse-opensovd/cpp-bindings) — C++ client bindings for SOVD core
+
+## Third-Party Content
+
+This project depends on third-party crates licensed under Apache-2.0,
+MIT, BSD-3-Clause, ISC, Zlib, and Unlicense-compatible terms.
+No copyleft (GPL/LGPL/AGPL) dependencies are used in their copyleft form.
+
+See `Cargo.lock` for the full dependency tree.
+
+### COVESA vSomeIP (FFI, optional)
+
+* License: MPL-2.0
+* Source: https://github.com/COVESA/vsomeip
+* Note: SOME/IP reference implementation. Used via C FFI in `native-comm-someip`
+  when the `vsomeip-ffi` feature is enabled. Not linked in default builds.
+
+### doip-codec / doip-definitions
+
+* License: MIT
+* Source: https://github.com/theswiftfox/doip-codec
+
+### openssl (Rust bindings)
+
+* License: Apache-2.0
+* Source: https://github.com/sfackler/rust-openssl
+* Note: Links against system OpenSSL library (OpenSSL License / Apache-2.0)
+
+### subtle
+
+* License: BSD-3-Clause
+* Source: https://github.com/dalek-cryptography/subtle

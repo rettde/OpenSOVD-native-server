@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# native-sovd — SOVD REST API via axum (matching CDA's cda-sovd)
+# ─────────────────────────────────────────────────────────────────────────────
+
+[package]
+name = "native-sovd"
+version = "0.5.0"
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+publish = false
+description = "SOVD REST API layer for OpenSOVD-native-server (axum-based)"
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+native-interfaces = { workspace = true }
+native-core = { workspace = true }
+native-health = { workspace = true }
+axum = { workspace = true, features = ["http1", "json", "tokio", "query", "matched-path", "original-uri"] }
+axum-extra = { workspace = true, features = ["typed-header"] }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["cors", "timeout", "trace", "limit"] }
+subtle = { workspace = true }
+http = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["sync", "net"] }
+tracing = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+chrono = { workspace = true }
+jsonwebtoken = { workspace = true }
+base64 = { workspace = true }
+hex = { workspace = true }
+dashmap = { workspace = true }
+futures = { workspace = true }
+tokio-stream = { workspace = true, features = ["time"] }
+reqwest = { workspace = true }
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+
+[dev-dependencies]
+async-trait = { workspace = true }

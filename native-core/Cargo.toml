@@ -1,0 +1,57 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# native-core — Diagnostic core logic (OpenSOVD standard-conformant)
+#
+# Standard mode:  SovdHttpBackend → external CDA via SOVD REST API
+# Standalone mode: LocalUdsBackend → direct UDS/DoIP (feature "local-uds")
+# ─────────────────────────────────────────────────────────────────────────────
+
+[package]
+name = "native-core"
+version = "0.5.0"
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+publish = false
+description = "Core diagnostic logic for OpenSOVD-native-server"
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+native-interfaces = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time", "rt", "macros", "rt-multi-thread"] }
+tracing = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+uuid = { workspace = true, features = ["v4"] }
+hex = { workspace = true }
+
+# HTTP backend (always available — standard-conformant gateway mode)
+reqwest = { workspace = true }
+base64 = { workspace = true }
+
+# Local UDS/DoIP backend (optional — standalone/embedded CDA mode)
+native-comm-doip = { workspace = true, optional = true }
+native-comm-uds = { workspace = true, optional = true }
+native-comm-someip = { workspace = true, optional = true }
+
+# Persistent FaultManager (optional)
+sled = { workspace = true, optional = true }
+
+[dev-dependencies]
+axum = { workspace = true, features = ["tokio", "json", "http1"] }
+
+[features]
+default = ["local-uds"]
+# Enable local UDS/DoIP backend (standalone mode with embedded CDA)
+local-uds = ["dep:native-comm-doip", "dep:native-comm-uds", "dep:native-comm-someip"]
+# Enable sled-based persistent storage for FaultManager
+persist = ["dep:sled"]

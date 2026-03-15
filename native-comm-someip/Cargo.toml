@@ -1,0 +1,37 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# native-comm-someip — vSomeIP FFI bindings for SOME/IP communication
+# Uses the C++ vsomeip3 library via FFI (matching OpenSOVD ecosystem approach)
+# ─────────────────────────────────────────────────────────────────────────────
+
+[package]
+name = "native-comm-someip"
+version = "0.5.0"
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+publish = false
+description = "vSomeIP FFI bindings for SOME/IP service-oriented communication"
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+native-interfaces = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt"] }
+tracing = { workspace = true }
+libc = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+[build-dependencies]
+cc = "1"
+
+[features]
+default = []
+# Enable actual vSomeIP FFI (requires libvsomeip3 installed)
+# Build: VSOMEIP_PREFIX=/path/to/vsomeip cargo build --features vsomeip-ffi
+vsomeip-ffi = []

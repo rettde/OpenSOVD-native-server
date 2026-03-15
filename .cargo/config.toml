@@ -1,0 +1,17 @@
+# ARM cross-compilation targets for HPC platforms
+# Uncomment the appropriate target for your platform
+
+# AArch64 (64-bit ARM) - most common for HPC ECUs
+# [target.aarch64-unknown-linux-gnu]
+# linker = "aarch64-linux-gnu-gcc"
+
+# ARMv7 (32-bit ARM) - older ECU platforms
+# [target.armv7-unknown-linux-gnueabihf]
+# linker = "arm-linux-gnueabihf-gcc"
+
+# Default build target (uncomment for cross-compilation)
+# [build]
+# target = "aarch64-unknown-linux-gnu"
+
+[build]
+rustflags = ["-C", "target-cpu=native"]
