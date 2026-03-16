@@ -1,44 +1,32 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# native-server — Main binary
+# demo-ecu — Example SOVD backend for demonstration
+#
+# A mock ECU that exposes SOVD-compatible REST endpoints. Point the
+# OpenSOVD-native-server's [[backends]] config at this service to see
+# the gateway in action.
 # ─────────────────────────────────────────────────────────────────────────────
 
 [package]
-name = "opensovd-native-server"
+name = "demo-ecu"
 version = "0.5.0"
 edition.workspace = true
 license.workspace = true
-homepage.workspace = true
 publish = false
-description = "OpenSOVD-native-server — main binary"
+description = "Demo ECU — mock SOVD backend for OpenSOVD-native-server"
 
 [lints]
 workspace = true
 
 [[bin]]
-name = "opensovd-native-server"
+name = "demo-ecu"
 path = "src/main.rs"
 
 [dependencies]
-native-interfaces = { workspace = true }
-native-core = { workspace = true }
-native-sovd = { workspace = true }
-native-health = { workspace = true }
-native-comm-someip = { workspace = true }
-
 axum = { workspace = true, features = ["http1", "json", "tokio"] }
-axum-server = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
-figment = { workspace = true, features = ["toml", "env"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-dashmap = { workspace = true }
-toml = { workspace = true }
-
-[features]
-default = []
-# Forward vsomeip-ffi to native-comm-someip
-vsomeip-ffi = ["native-comm-someip/vsomeip-ffi"]
-# Enable sled-based persistent FaultManager
-persist = ["native-core/persist"]
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
+chrono = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }

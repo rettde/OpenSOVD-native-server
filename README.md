@@ -47,17 +47,27 @@ with the other OpenSOVD components:
 | **Fault Library** ([design](https://github.com/eclipse-opensovd/opensovd/blob/main/docs/design/design.md)) | `native-core/fault_bridge.rs` implements the `FaultSink` trait from the OpenSOVD fault-lib design, bridging decentral fault reporters into the local Diagnostic Fault Manager. |
 | **[COVESA/vsomeip](https://github.com/COVESA/vsomeip)** | `native-comm-someip` provides Rust FFI bindings to `libvsomeip3`. Feature-gated (`vsomeip-ffi`), stub mode without it. |
 
-### Operating Modes
+### Architecture
 
-| Mode | Build | Description |
-|------|-------|-------------|
-| **Gateway** (default) | `cargo build --no-default-features` | Pure SOVD gateway — forwards to external CDA/SOVD backends via HTTP. No DoIP/UDS dependencies. |
-| **Standalone** | `cargo build` (feature `local-uds`) | Embedded UDS/DoIP for direct ECU communication without a separate CDA. Uses `doip-codec` + `doip-definitions`. |
+The server is a **pure SOVD gateway** — it forwards ISO 17978-3 REST requests to
+one or more backends (CDA instances, native SOVD applications) via HTTP.
+DoIP/UDS translation is the CDA's responsibility, keeping this server focused on
+the SOVD API contract, authentication, fault aggregation, and gateway routing.
 
-> **Recommendation:** Use **gateway mode** in production. The standalone mode with embedded
-> DoIP/UDS (`native-comm-doip`, `native-comm-uds`) is provided for development/testing
-> and for deployments where a separate CDA is not available. In the standard OpenSOVD
-> architecture, DoIP/UDS translation is the CDA's responsibility.
+```
+SOVD Clients (HTTP/JSON)
+        │
+        ▼
+┌───────────────────────────────────────────┐
+│        OpenSOVD-native-server             │
+│  ComponentRouter → SovdHttpBackend(s)     │
+│  FaultManager / LockManager / DiagLog     │
+└───────────────┬───────────────────────────┘
+                │ SOVD REST
+        ┌───────┴───────┐
+        ▼               ▼
+   CDA (UDS/DoIP)   demo-ecu (example)
+```
 
 ## Key Features
 
@@ -83,8 +93,7 @@ OpenSOVD-native-server/
 ├── native-health/           # System health monitoring
 ├── native-server/           # Main binary
 ├── native-comm-someip/      # COVESA/vsomeip FFI (SOME/IP)
-├── native-comm-doip/        # DoIP transport (feature: local-uds)
-├── native-comm-uds/         # UDS client (feature: local-uds)
+├── examples/demo-ecu/       # Example: mock ECU backend (BMS + Climate)
 └── config/                  # TOML configuration
 ```
 
@@ -138,162 +147,63 @@ OpenSOVD-native-server/
 
 - Rust 1.75+ (`rustup` recommended)
 - For SOME/IP: `libvsomeip3` (optional, stub mode without it)
-- For cross-compilation: appropriate target toolchain (e.g. `aarch64-linux-gnu-gcc`)
 
-### Build & Run
+### Try it with the demo-ecu
 
-```bash
-# Build
-cargo build --release
-
-# Run (binary is in native-server crate)
-cargo run --release -p opensovd-native-server
-
-# Server starts at http://0.0.0.0:8080/sovd/v1
-```
-
-### Cross-Compile (example: AArch64)
+The included `demo-ecu` example simulates a Battery Management System and a Cabin
+Climate Controller. Use it to see the native server in action:
 
 ```bash
-rustup target add aarch64-unknown-linux-gnu
-cargo build --release --target aarch64-unknown-linux-gnu
-# Binary at: target/aarch64-unknown-linux-gnu/release/opensovd-native-server
+# Terminal 1 — start the mock ECU backend
+cargo run -p demo-ecu
+# → listening on http://localhost:3001/sovd/v1
+
+# Terminal 2 — start the SOVD server (uncomment demo-ecu backend in config first)
+cargo run -p opensovd-native-server
+# → listening on http://localhost:8080/sovd/v1
+
+# Terminal 3 — query via the SOVD gateway
+curl http://localhost:8080/sovd/v1/components | jq
+curl http://localhost:8080/sovd/v1/components/bms/data | jq
+curl http://localhost:8080/sovd/v1/components/bms/faults | jq
+curl -X POST http://localhost:8080/sovd/v1/components/bms/operations/self-test \
+  -H "Content-Type: application/json" -d '{}' | jq
+
+# Write data (read-write items only)
+curl -X PUT http://localhost:8080/sovd/v1/components/climate/data/target-temp \
+  -H "Content-Type: application/json" -d '{"value": 23.0}' | jq
 ```
 
-## Configuration
-
-Configuration is loaded via [figment](https://crates.io/crates/figment) from TOML files and environment variables (matching CDA's `opensovd-cda.toml` pattern):
-
-```bash
-# Environment variable overrides (SOVD__ prefix, __ separator)
-export SOVD__SERVER__PORT=9090
-export SOVD__DOIP__GATEWAY_PORT=13400
-export SOVD__LOGGING__LEVEL=debug
-```
-
-### Configuration File (`config/opensovd-native-server.toml`)
+### Configuration (`config/opensovd-native-server.toml`)
 
 ```toml
 [server]
 host = "0.0.0.0"
 port = 8080
 
-[doip]
-tester_address = "127.0.0.1"
-tester_subnet = "255.255.0.0"
-gateway_port = 13400
-source_address = 3584  # 0x0E00
-# tls_ca_cert = "certs/ca.pem"       # Optional: DoIP TLS
-# tls_client_cert = "certs/client.pem"
-# tls_client_key = "certs/client-key.pem"
-
 [auth]
 enabled = false
-# api_key = "my-secret-key"          # Static API key
-# jwt_secret = "my-jwt-secret"       # JWT HS256 secret
-# public_paths = ["/sovd/v1/health"] # Paths excluded from auth
+# api_key = "my-secret-key"
 
 [logging]
 level = "info"
 
-# Component-to-ECU mappings
-[[components]]
-sovd_component_id = "hpc-main"
-sovd_name = "HPC Main Controller"
-doip_target_address = 1
-doip_source_address = 3584
-group = "powertrain"
-features = ["faults", "data", "operations"]
+# Point the gateway at backends:
+[[backends]]
+name = "demo-ecu"
+base_url = "http://localhost:3001"
+api_prefix = "/sovd/v1"
+component_ids = ["bms", "climate"]
 
-[[components.data_identifiers]]
-did = "F190"
-name = "VIN"
-access = "read-only"
-
-[[components.operations]]
-routine_id = "FF00"
-name = "Self Test"
-
-# Logical component groups (SOVD §7.2)
-[[groups]]
-id = "powertrain"
-name = "Powertrain"
-description = "Engine and transmission ECUs"
+# Add more backends (e.g. Classic Diagnostic Adapter):
+# [[backends]]
+# name = "CDA"
+# base_url = "http://localhost:20002"
+# api_prefix = "/sovd/v1"
+# component_ids = ["brake-ecu", "eps-ecu"]
 ```
 
-## Example API Calls
-
-```bash
-# Server info
-curl http://localhost:8080/sovd/v1 | jq
-
-# List components (with pagination)
-curl "http://localhost:8080/sovd/v1/components?\$top=10&\$skip=0" | jq
-
-# Connect to ECU
-curl -X POST http://localhost:8080/sovd/v1/components/hpc-main/connect
-
-# Component capabilities
-curl http://localhost:8080/sovd/v1/components/hpc-main/capabilities | jq
-
-# List data identifiers
-curl http://localhost:8080/sovd/v1/components/hpc-main/data | jq
-
-# Read DID 0xF190 (VIN)
-curl http://localhost:8080/sovd/v1/components/hpc-main/data/0xF190 | jq
-
-# Read faults
-curl http://localhost:8080/sovd/v1/components/hpc-main/faults | jq
-
-# Clear single fault
-curl -X DELETE http://localhost:8080/sovd/v1/components/hpc-main/faults/fault-123
-
-# Acquire exclusive lock
-curl -X POST http://localhost:8080/sovd/v1/components/hpc-main/lock \
-  -H "Content-Type: application/json" \
-  -d '{"lockedBy":"tester-1"}' | jq
-
-# Release lock
-curl -X DELETE http://localhost:8080/sovd/v1/components/hpc-main/lock
-
-# Execute routine 0xFF00
-curl -X POST http://localhost:8080/sovd/v1/components/hpc-main/operations/0xFF00 \
-  -H "Content-Type: application/json" \
-  -d '{}' | jq
-
-# List operation executions
-curl http://localhost:8080/sovd/v1/components/hpc-main/operations/0xFF00/executions | jq
-
-# Get/set diagnostic mode
-curl http://localhost:8080/sovd/v1/components/hpc-main/mode | jq
-curl -X POST http://localhost:8080/sovd/v1/components/hpc-main/mode \
-  -H "Content-Type: application/json" \
-  -d '{"mode":"extended"}' | jq
-
-# List groups and members
-curl http://localhost:8080/sovd/v1/groups | jq
-curl http://localhost:8080/sovd/v1/groups/powertrain/components | jq
-
-# Diagnostic logs
-curl http://localhost:8080/sovd/v1/components/hpc-main/logs | jq
-
-# Proximity challenge
-curl -X POST http://localhost:8080/sovd/v1/components/hpc-main/proximityChallenge \
-  -H "Content-Type: application/json" \
-  -d '{}' | jq
-
-# OTA Firmware Flash (base64-encoded binary)
-FIRMWARE_B64=$(base64 < firmware.bin)
-curl -X POST http://localhost:8080/sovd/v1/components/hpc-main/flash \
-  -H "Content-Type: application/json" \
-  -d "{\"firmware_data\": \"${FIRMWARE_B64}\", \"memory_address\": 536870912}" | jq
-
-# Health check
-curl http://localhost:8080/sovd/v1/health | jq
-
-# With API key authentication
-curl -H "X-API-Key: my-secret-key" http://localhost:8080/sovd/v1/components | jq
-```
+Environment variable overrides: `SOVD__SERVER__PORT=9090`, `SOVD__LOGGING__LEVEL=debug`
 
 ## Key Dependencies
 
@@ -306,7 +216,6 @@ curl -H "X-API-Key: my-secret-key" http://localhost:8080/sovd/v1/components | jq
 | [`jsonwebtoken`](https://crates.io/crates/jsonwebtoken) | JWT / OIDC authentication | — |
 | [`dashmap`](https://crates.io/crates/dashmap) | Concurrent stores (faults, locks, executions) | — |
 | [`sled`](https://crates.io/crates/sled) | Persistent fault storage (optional feature `persist`) | — |
-| [`doip-codec`](https://github.com/theswiftfox/doip-codec) | DoIP transport (ISO 13400) | Feature `local-uds` only |
 | [COVESA/vsomeip](https://github.com/COVESA/vsomeip) | SOME/IP via C FFI | Feature `vsomeip-ffi` only |
 
 ## Related Projects

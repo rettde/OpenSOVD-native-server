@@ -1,10 +1,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# OpenSOVD-native-server Configuration (standard-conformant architecture)
+# OpenSOVD-native-server Configuration
 #
 # Architecture:
 #   Client → SOVD Server → ComponentRouter (Gateway)
-#                               ├── SovdHttpBackend  → external CDA (standard)
-#                               └── LocalUdsBackend  → embedded UDS/DoIP (standalone)
+#                               └── SovdHttpBackend → external backends via REST
 #
 # Backends are tried in order; the first that handles a component wins.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -29,206 +28,30 @@ enabled = false
 # public_paths = ["/sovd/v1/", "/sovd/v1/health"]
 
 # ═════════════════════════════════════════════════════════════════════════════
-# BACKENDS — Standard-conformant: SOVD HTTP clients to external CDA / servers
+# BACKENDS — SOVD HTTP clients forwarding to external CDA / SOVD servers
 # ═════════════════════════════════════════════════════════════════════════════
 #
 # Each [[backends]] entry creates an SovdHttpBackend that forwards SOVD REST
-# requests to an external SOVD server (e.g. the Classic Diagnostic Adapter).
+# requests to an external SOVD server (e.g. CDA, or the included demo-ecu).
 #
 # The server auto-discovers components from the external server on startup.
 # Alternatively, list component_ids explicitly for static routing.
 
-# Example: External CDA for legacy ECUs (brake, EPS, BMS, gateway)
-# Uncomment when a CDA instance is running:
+# ── Example: demo-ecu (included in examples/demo-ecu) ────────────────────
+# Start with: cargo run -p demo-ecu
+#
+# [[backends]]
+# name = "demo-ecu"
+# base_url = "http://localhost:3001"
+# api_prefix = "/sovd/v1"
+# timeout_secs = 10
+# component_ids = ["bms", "climate"]
+
+# ── Example: Classic Diagnostic Adapter for legacy ECUs ───────────────────
 #
 # [[backends]]
 # name = "CDA Legacy ECUs"
 # base_url = "http://localhost:20002"
 # api_prefix = "/sovd/v1"
 # timeout_secs = 30
-# # bearer_token = "..."
 # component_ids = ["brake-ecu", "eps-ecu", "bms-ecu", "gateway"]
-
-# Example: Another SOVD server (native SOVD ECU, e.g. ADAS HPC)
-#
-# [[backends]]
-# name = "ADAS SOVD"
-# base_url = "http://adas-hpc:8080"
-# api_prefix = "/sovd/v1"
-# component_ids = ["adas-main"]
-
-# ═════════════════════════════════════════════════════════════════════════════
-# LOCAL UDS/DoIP BACKEND — Standalone / development mode (feature "local-uds")
-# ═════════════════════════════════════════════════════════════════════════════
-#
-# When compiled with --features local-uds (default), the server can also
-# communicate directly with ECUs via UDS/DoIP. This is an embedded CDA mode
-# for standalone deployments or development without an external CDA.
-#
-# In production, prefer using [[backends]] pointing to the real CDA instead.
-
-[doip]
-tester_address = "127.0.0.1"
-tester_subnet = "255.255.0.0"
-gateway_port = 13400
-tls_port = 0
-send_timeout_ms = 5000
-source_address = 3584  # 0x0E00
-
-# ── Component Mappings (local UDS/DoIP mode only) ───────────────────────
-
-[[components]]
-sovd_component_id = "hpc-main"
-sovd_name = "HPC Main Controller"
-doip_target_address = 1         # 0x0001
-doip_source_address = 3584      # 0x0E00
-group = "powertrain"
-features = ["faults", "ota"]
-
-[[components.data_identifiers]]
-did = "F190"
-name = "VIN"
-access = "read-only"
-
-[[components.data_identifiers]]
-did = "F187"
-name = "ECU Serial Number"
-access = "read-only"
-
-[[components.data_identifiers]]
-did = "F195"
-name = "Software Version"
-access = "read-only"
-
-[[components.data_identifiers]]
-did = "0200"
-name = "System Voltage"
-access = "read-only"
-unit = "V"
-
-[[components.operations]]
-routine_id = "FF00"
-name = "Self Test"
-description = "Execute ECU self-diagnostic"
-
-[[components.operations]]
-routine_id = "FF01"
-name = "Reset to Factory"
-description = "Reset all learned values"
-
-[[components.config_dids]]
-did = "F100"
-name = "Coding"
-access = "read-write"
-description = "ECU variant coding"
-
-[[components]]
-sovd_component_id = "brake-ecu"
-sovd_name = "Brake ECU (ESC/ABS)"
-doip_target_address = 16        # 0x0010
-doip_source_address = 3584      # 0x0E00
-group = "chassis"
-features = ["faults"]
-
-[[components.data_identifiers]]
-did = "F190"
-name = "VIN"
-access = "read-only"
-
-[[components.data_identifiers]]
-did = "2000"
-name = "Wheel Speed FL"
-access = "read-only"
-unit = "km/h"
-
-[[components.data_identifiers]]
-did = "2001"
-name = "Wheel Speed FR"
-access = "read-only"
-unit = "km/h"
-
-[[components.operations]]
-routine_id = "DF00"
-name = "ABS Bleed"
-description = "ABS hydraulic bleed routine"
-
-[[components]]
-sovd_component_id = "eps-ecu"
-sovd_name = "Electric Power Steering ECU"
-doip_target_address = 32        # 0x0020
-doip_source_address = 3584      # 0x0E00
-group = "chassis"
-features = ["faults"]
-
-[[components.data_identifiers]]
-did = "F190"
-name = "VIN"
-access = "read-only"
-
-[[components.data_identifiers]]
-did = "3000"
-name = "Steering Angle"
-access = "read-only"
-unit = "deg"
-
-[[components]]
-sovd_component_id = "bms-ecu"
-sovd_name = "Battery Management System"
-doip_target_address = 48        # 0x0030
-doip_source_address = 3584      # 0x0E00
-group = "powertrain"
-features = ["faults"]
-
-[[components.data_identifiers]]
-did = "F190"
-name = "VIN"
-access = "read-only"
-
-[[components.data_identifiers]]
-did = "4000"
-name = "SoC"
-access = "read-only"
-unit = "%"
-description = "State of Charge"
-
-[[components.data_identifiers]]
-did = "4001"
-name = "Cell Voltage Min"
-access = "read-only"
-unit = "mV"
-
-[[components.data_identifiers]]
-did = "4002"
-name = "Cell Voltage Max"
-access = "read-only"
-unit = "mV"
-
-[[components]]
-sovd_component_id = "gateway"
-sovd_name = "Central Gateway Module"
-doip_target_address = 4096      # 0x1000
-doip_source_address = 3584      # 0x0E00
-group = "network"
-features = ["faults"]
-
-[[components.data_identifiers]]
-did = "F190"
-name = "VIN"
-access = "read-only"
-
-# ── Component Groups ─────────────────────────────────────────────────────
-
-[[groups]]
-id = "powertrain"
-name = "Powertrain"
-description = "HPC and battery management"
-
-[[groups]]
-id = "chassis"
-name = "Chassis"
-description = "Brake, steering, suspension"
-
-[[groups]]
-id = "network"
-name = "Network"
-description = "Gateway and network infrastructure"

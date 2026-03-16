@@ -2,16 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // ─────────────────────────────────────────────────────────────────────────────
-// opensovd-native-server — Main binary (OpenSOVD standard-conformant architecture)
+// opensovd-native-server — Main binary
 //
 // Architecture:
 //   Client → SOVD Server → ComponentRouter (Gateway)
-//                               ├── SovdHttpBackend  → external CDA (standard)
-//                               └── LocalUdsBackend  → embedded UDS/DoIP (standalone)
-//
-// The server dispatches to backends per component. Each backend can be:
-//   - "http://<url>"  → SovdHttpBackend (forwards to external CDA)
-//   - "local-uds"     → LocalUdsBackend (direct UDS/DoIP, feature-gated)
+//                               └── SovdHttpBackend → external CDA / SOVD backends
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::sync::Arc;
@@ -32,13 +27,6 @@ use native_core::{
 use native_health::HealthMonitor;
 use native_interfaces::ComponentBackend;
 use native_sovd::{build_router, AppState, AuthConfig};
-
-#[cfg(feature = "local-uds")]
-use native_comm_doip::DoipConfig;
-#[cfg(feature = "local-uds")]
-use native_core::translation::{ComponentMapping, GroupDef, TranslationConfig};
-#[cfg(feature = "local-uds")]
-use native_core::{LocalUdsBackend, SovdTranslator};
 
 use native_comm_someip::{SomeIpConfig, SomeIpRuntime};
 
@@ -61,17 +49,6 @@ struct AppConfig {
     /// External SOVD backends (CDA instances, native SOVD endpoints)
     #[serde(default)]
     backends: Vec<SovdHttpBackendConfig>,
-
-    // ── Local UDS/DoIP backend (standalone mode, feature-gated) ─────────
-    #[cfg(feature = "local-uds")]
-    #[serde(default)]
-    doip: DoipConfig,
-    #[cfg(feature = "local-uds")]
-    #[serde(default)]
-    components: Vec<ComponentMapping>,
-    #[cfg(feature = "local-uds")]
-    #[serde(default)]
-    groups: Vec<GroupDef>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -164,26 +141,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         backends.push(Arc::new(http_backend));
-    }
-
-    // 2. Local UDS/DoIP backend (standalone mode, feature-gated)
-    #[cfg(feature = "local-uds")]
-    {
-        if !config.components.is_empty() {
-            info!(
-                count = config.components.len(),
-                "Registering local UDS/DoIP backend (standalone mode)"
-            );
-            let translation_config = TranslationConfig {
-                doip: config.doip.clone(),
-                component_mappings: config.components,
-                tester_present_interval_ms: 2000,
-                groups: config.groups,
-            };
-            let translator = Arc::new(SovdTranslator::new(translation_config));
-            let local_backend = Arc::new(LocalUdsBackend::new(translator));
-            backends.push(local_backend);
-        }
     }
 
     if backends.is_empty() {

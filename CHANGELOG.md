@@ -10,11 +10,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.5.0] — 2026-03-14
 
 ### Architecture
-- **Backend abstraction**: `ComponentBackend` trait with gateway pattern (`ComponentRouter`)
-- **Standard mode**: `SovdHttpBackend` proxies to external CDA via SOVD REST API
-- **Standalone mode**: `LocalUdsBackend` wraps embedded UDS/DoIP (feature-gated `local-uds`)
+- **Pure gateway mode**: `ComponentBackend` trait with gateway pattern (`ComponentRouter`)
+- **SovdHttpBackend**: proxies SOVD REST requests to external CDA / SOVD backends
 - **FaultBridge**: DFM-compatible fault flow from `FaultSink` to `FaultManager`
-- **Feature gates**: `local-uds`, `persist`, `vsomeip-ffi` for modular builds
+- **Feature gates**: `persist`, `vsomeip-ffi` for modular builds
+- **demo-ecu**: example mock ECU backend (BMS + Climate Controller) for testing the gateway
 
 ### ISO 17978-3 Conformance (10.0/10)
 - Full OData JSON error envelope (`SovdErrorEnvelope`) per OData §9.4
@@ -53,10 +53,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - TLS support via `axum-server` + `rustls`
 
 ### Testing
-- **227 tests** across the workspace (all passing)
+- **152 tests** across the workspace (all passing)
   - `native-interfaces` — 33 tests
-  - `native-core` — 75 tests
-  - `native-comm-uds` — 40 tests
+  - `native-core` — 40 tests
   - `native-health` — 6 tests
   - `native-sovd` — 73 tests
 
@@ -68,11 +67,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+### Removed
+- **Standalone mode**: `native-comm-doip`, `native-comm-uds`, `LocalUdsBackend`, `SovdTranslator`, `ota` modules removed
+- **`local-uds` feature gate**: no longer needed — server is gateway-only
+- DoIP/UDS configuration sections from `opensovd-native-server.toml`
+
 ## [0.1.0] — 2025-01-01
 
 - Initial workspace structure matching OpenSOVD CDA patterns
-- UDS communication layer (`native-comm-uds`)
-- DoIP communication layer (`native-comm-doip`)
 - vSomeIP FFI bindings (`native-comm-someip`)
 - Health monitoring (`native-health`)
 - Basic SOVD REST API (`native-sovd`)

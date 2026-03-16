@@ -45,17 +45,10 @@ jobs:
       - run: cargo fmt --all -- --check
 
   build:
-    name: Build (${{ matrix.mode }})
+    name: Build
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - mode: default
-            args: "--workspace"
-          - mode: gateway-only
-            args: "-p opensovd-native-server --no-default-features"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release ${{ matrix.args }}
+      - run: cargo build --release --workspace

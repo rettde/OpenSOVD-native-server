@@ -14,20 +14,17 @@ rust-version = "1.75"
 resolver = "2"
 members = [
     "native-interfaces",
-    "native-comm-doip",
-    "native-comm-uds",
     "native-comm-someip",
     "native-core",
     "native-sovd",
     "native-health",
     "native-server",
+    "examples/demo-ecu",
 ]
 
 # ── Internal workspace crates ────────────────────────────────────────────────
 [workspace.dependencies]
 native-interfaces = { path = "native-interfaces" }
-native-comm-doip = { path = "native-comm-doip" }
-native-comm-uds = { path = "native-comm-uds" }
 native-comm-someip = { path = "native-comm-someip" }
 native-core = { path = "native-core" }
 native-sovd = { path = "native-sovd" }
@@ -51,16 +48,7 @@ strum_macros = "0.27"
 dashmap = "5"
 http = "1"
 
-# ── DoIP (same crates as CDA: doip-codec + doip-definitions) ────────────────
-doip-codec = "2.0"
-doip-definitions = "3.0"
-
-# ── Networking + TLS (matching CDA: OpenSSL) ─────────────────────────────────
-openssl = "0.10"
-tokio-openssl = "0.6"
-socket2 = "0.5"
-
-# ── Web / API (matching CDA: axum + tower) ───────────────────────────────────
+# ── Web / API (axum + tower) ─────────────────────────────────────────────────
 axum = { version = "0.8", default-features = false }
 axum-extra = "0.10"
 axum-server = { version = "0.7", features = ["tls-rustls"] }
@@ -116,7 +104,3 @@ panic = "abort"
 [profile.release.build-override]
 opt-level = 3
 
-# ── Use same patched DoIP crates as CDA ──────────────────────────────────────
-[patch.crates-io]
-doip-codec = { git = "https://github.com/theswiftfox/doip-codec.git", rev = "0dba319" }
-doip-definitions = { git = "https://github.com/theswiftfox/doip-definitions.git", rev = "bdeab8c" }

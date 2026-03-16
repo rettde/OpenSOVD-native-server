@@ -219,6 +219,7 @@ fn cmp_json_values(
 }
 
 /// Build the full axum router with all SOVD endpoints
+#[allow(clippy::too_many_lines)]
 pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
     // ── Standard ISO 17978-3 routes ────────────────────────────────────────
     let sovd_v1 = Router::new()
@@ -1618,50 +1619,240 @@ mod tests {
     use http::StatusCode;
     use tower::ServiceExt;
 
-    fn test_state() -> AppState {
-        use native_core::translation::{
-            ComponentMapping, DataIdentifierDef, GroupDef, OperationDef, TranslationConfig,
-        };
-        use native_core::{
-            ComponentRouter, DiagLog, FaultManager, LocalUdsBackend, LockManager, SovdTranslator,
-        };
-        use native_health::HealthMonitor;
-        use native_interfaces::ComponentBackend;
-        use std::sync::Arc;
+    // ── Mock backend for tests (replaces removed LocalUdsBackend) ──────
 
-        let config = TranslationConfig {
-            component_mappings: vec![ComponentMapping {
-                sovd_component_id: "hpc".into(),
-                sovd_name: "HPC Main".into(),
-                doip_target_address: 1,
-                doip_source_address: 0x0E00,
-                data_identifiers: vec![DataIdentifierDef {
-                    did: "F190".into(),
-                    name: "VIN".into(),
-                    description: None,
-                    access: "read-only".into(),
-                    unit: None,
-                }],
-                operations: vec![OperationDef {
-                    routine_id: "FF00".into(),
-                    name: "Self Test".into(),
-                    description: None,
-                }],
-                group: Some("powertrain".into()),
-                features: vec!["faults".into()],
-                config_dids: vec![],
-            }],
-            groups: vec![GroupDef {
+    struct MockBackend;
+
+    #[async_trait::async_trait]
+    impl native_interfaces::ComponentBackend for MockBackend {
+        fn name(&self) -> &str {
+            "mock"
+        }
+        fn list_components(&self) -> Vec<native_interfaces::sovd::SovdComponent> {
+            vec![native_interfaces::sovd::SovdComponent {
+                id: "hpc".into(),
+                name: "HPC Main".into(),
+                category: "ecu".into(),
+                description: None,
+                connection_state: native_interfaces::sovd::SovdConnectionState::Disconnected,
+            }]
+        }
+        fn get_component(
+            &self,
+            component_id: &str,
+        ) -> Option<native_interfaces::sovd::SovdComponent> {
+            self.list_components()
+                .into_iter()
+                .find(|c| c.id == component_id)
+        }
+        async fn connect(&self, _: &str) -> Result<(), native_interfaces::DiagServiceError> {
+            Ok(())
+        }
+        async fn disconnect(&self, _: &str) -> Result<(), native_interfaces::DiagServiceError> {
+            Ok(())
+        }
+        fn list_data(
+            &self,
+            _: &str,
+        ) -> Result<
+            Vec<native_interfaces::sovd::SovdDataCatalogEntry>,
+            native_interfaces::DiagServiceError,
+        > {
+            Ok(vec![native_interfaces::sovd::SovdDataCatalogEntry {
+                id: "0xF190".into(),
+                name: "VIN".into(),
+                description: None,
+                access: native_interfaces::sovd::SovdDataAccess::ReadOnly,
+                data_type: native_interfaces::sovd::SovdDataType::String,
+                unit: None,
+                did: Some("F190".into()),
+            }])
+        }
+        async fn read_data(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> Result<serde_json::Value, native_interfaces::DiagServiceError> {
+            Ok(serde_json::json!({"value": "WVWZZZ3CZWE123456"}))
+        }
+        async fn write_data(
+            &self,
+            _: &str,
+            _: &str,
+            _: &[u8],
+        ) -> Result<(), native_interfaces::DiagServiceError> {
+            Ok(())
+        }
+        async fn read_faults(
+            &self,
+            _: &str,
+        ) -> Result<Vec<native_interfaces::sovd::SovdFault>, native_interfaces::DiagServiceError>
+        {
+            Ok(vec![])
+        }
+        async fn clear_faults(&self, _: &str) -> Result<(), native_interfaces::DiagServiceError> {
+            Ok(())
+        }
+        fn list_operations(
+            &self,
+            _: &str,
+        ) -> Result<Vec<native_interfaces::sovd::SovdOperation>, native_interfaces::DiagServiceError>
+        {
+            Ok(vec![native_interfaces::sovd::SovdOperation {
+                id: "0xFF00".into(),
+                component_id: "hpc".into(),
+                name: "Self Test".into(),
+                description: Some("Execute ECU self-diagnostic".into()),
+                status: native_interfaces::sovd::SovdOperationStatus::Idle,
+            }])
+        }
+        async fn execute_operation(
+            &self,
+            _: &str,
+            _: &str,
+            _: Option<&[u8]>,
+        ) -> Result<serde_json::Value, native_interfaces::DiagServiceError> {
+            Ok(serde_json::json!({"status": "completed"}))
+        }
+        fn get_capabilities(
+            &self,
+            _: &str,
+        ) -> Result<native_interfaces::sovd::SovdCapabilities, native_interfaces::DiagServiceError>
+        {
+            Ok(native_interfaces::sovd::SovdCapabilities {
+                component_id: "hpc".into(),
+                supported_categories: vec!["data".into(), "faults".into(), "operations".into()],
+                data_count: 1,
+                operation_count: 1,
+                features: vec!["faults".into(), "locking".into()],
+            })
+        }
+        fn get_mode(
+            &self,
+            component_id: &str,
+        ) -> Result<native_interfaces::sovd::SovdMode, native_interfaces::DiagServiceError>
+        {
+            Ok(native_interfaces::sovd::SovdMode {
+                component_id: component_id.into(),
+                current_mode: "default".into(),
+                available_modes: vec!["default".into(), "extended".into(), "programming".into()],
+            })
+        }
+        async fn set_mode(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> Result<(), native_interfaces::DiagServiceError> {
+            Ok(())
+        }
+        async fn read_config(
+            &self,
+            _: &str,
+        ) -> Result<native_interfaces::sovd::SovdComponentConfig, native_interfaces::DiagServiceError>
+        {
+            Ok(native_interfaces::sovd::SovdComponentConfig {
+                component_id: "hpc".into(),
+                parameters: serde_json::json!({}),
+            })
+        }
+        async fn write_config(
+            &self,
+            _: &str,
+            _: &str,
+            _: &[u8],
+        ) -> Result<(), native_interfaces::DiagServiceError> {
+            Ok(())
+        }
+        async fn bulk_read(
+            &self,
+            _: &str,
+            _: &[String],
+        ) -> Result<
+            Vec<native_interfaces::sovd::SovdBulkDataItem>,
+            native_interfaces::DiagServiceError,
+        > {
+            Ok(vec![])
+        }
+        async fn bulk_write(
+            &self,
+            _: &str,
+            _: &[native_interfaces::sovd::SovdBulkWriteItem],
+        ) -> Result<
+            Vec<native_interfaces::sovd::SovdBulkDataItem>,
+            native_interfaces::DiagServiceError,
+        > {
+            Ok(vec![])
+        }
+        fn list_groups(&self) -> Vec<native_interfaces::sovd::SovdGroup> {
+            vec![native_interfaces::sovd::SovdGroup {
                 id: "powertrain".into(),
                 name: "Powertrain".into(),
                 description: Some("Engine group".into()),
-            }],
-            ..Default::default()
-        };
+                component_ids: vec!["hpc".into()],
+            }]
+        }
+        fn get_group(&self, group_id: &str) -> Option<native_interfaces::sovd::SovdGroup> {
+            self.list_groups().into_iter().find(|g| g.id == group_id)
+        }
+        async fn io_control(
+            &self,
+            _: &str,
+            _: &str,
+            _: &str,
+            _: Option<&[u8]>,
+        ) -> Result<serde_json::Value, native_interfaces::DiagServiceError> {
+            Err(native_interfaces::DiagServiceError::RequestNotSupported(
+                "io_control".into(),
+            ))
+        }
+        async fn communication_control(
+            &self,
+            _: &str,
+            _: &str,
+            _: u8,
+        ) -> Result<(), native_interfaces::DiagServiceError> {
+            Ok(())
+        }
+        async fn dtc_setting(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> Result<(), native_interfaces::DiagServiceError> {
+            Ok(())
+        }
+        async fn read_memory(
+            &self,
+            _: &str,
+            _: u32,
+            _: u32,
+        ) -> Result<Vec<u8>, native_interfaces::DiagServiceError> {
+            Ok(vec![])
+        }
+        async fn write_memory(
+            &self,
+            _: &str,
+            _: u32,
+            _: &[u8],
+        ) -> Result<(), native_interfaces::DiagServiceError> {
+            Ok(())
+        }
+        async fn flash(
+            &self,
+            _: &str,
+            _: &[u8],
+            _: u32,
+        ) -> Result<serde_json::Value, native_interfaces::DiagServiceError> {
+            Ok(serde_json::json!({"status": "completed"}))
+        }
+    }
 
-        let translator = Arc::new(SovdTranslator::new(config));
-        let local_backend: Arc<dyn ComponentBackend> = Arc::new(LocalUdsBackend::new(translator));
-        let router = Arc::new(ComponentRouter::new(vec![local_backend]));
+    fn test_state() -> AppState {
+        use native_core::{ComponentRouter, DiagLog, FaultManager, LockManager};
+        use native_health::HealthMonitor;
+        use std::sync::Arc;
+
+        let mock: Arc<dyn native_interfaces::ComponentBackend> = Arc::new(MockBackend);
+        let router = Arc::new(ComponentRouter::new(vec![mock]));
 
         AppState {
             backend: router,
@@ -2287,8 +2478,7 @@ mod tests {
             )
             .await
             .unwrap();
-        // read_config requires UDS connection — diag_error maps NotFound → 404
-        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 }
 

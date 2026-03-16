@@ -1,8 +1,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # native-core — Diagnostic core logic (OpenSOVD standard-conformant)
 #
-# Standard mode:  SovdHttpBackend → external CDA via SOVD REST API
-# Standalone mode: LocalUdsBackend → direct UDS/DoIP (feature "local-uds")
+# SovdHttpBackend → external CDA / SOVD backends via REST API
+# ComponentRouter → gateway aggregating multiple backends
 # ─────────────────────────────────────────────────────────────────────────────
 
 [package]
@@ -38,11 +38,6 @@ hex = { workspace = true }
 reqwest = { workspace = true }
 base64 = { workspace = true }
 
-# Local UDS/DoIP backend (optional — standalone/embedded CDA mode)
-native-comm-doip = { workspace = true, optional = true }
-native-comm-uds = { workspace = true, optional = true }
-native-comm-someip = { workspace = true, optional = true }
-
 # Persistent FaultManager (optional)
 sled = { workspace = true, optional = true }
 
@@ -50,8 +45,6 @@ sled = { workspace = true, optional = true }
 axum = { workspace = true, features = ["tokio", "json", "http1"] }
 
 [features]
-default = ["local-uds"]
-# Enable local UDS/DoIP backend (standalone mode with embedded CDA)
-local-uds = ["dep:native-comm-doip", "dep:native-comm-uds", "dep:native-comm-someip"]
+default = []
 # Enable sled-based persistent storage for FaultManager
 persist = ["dep:sled"]
