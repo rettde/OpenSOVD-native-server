@@ -5,7 +5,6 @@
 // ComponentBackend — Abstraction over how the SOVD Server reaches components.
 //
 // Implementations:
-//   LocalUdsBackend  — Direct UDS/DoIP (standalone / embedded CDA mode)
 //   SovdHttpBackend  — HTTP client forwarding to external CDA or SOVD server
 //
 // This follows the OpenSOVD architecture where the SOVD Server communicates

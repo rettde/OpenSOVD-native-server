@@ -9,9 +9,8 @@
 // "SOVD Gateway" role from the OpenSOVD architecture:
 //
 //   Client → SOVD Server → ComponentRouter (Gateway)
-//                               ├── LocalUdsBackend   (embedded CDA)
 //                               ├── SovdHttpBackend    (external CDA)
-//                               └── SovdHttpBackend    (native SOVD ECU)
+//                               └── SovdHttpBackend    (native SOVD ECU / demo-ecu)
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::sync::Arc;
