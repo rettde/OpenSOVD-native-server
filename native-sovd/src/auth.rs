@@ -12,6 +12,8 @@
 // Health and discovery endpoints are excluded from auth by default.
 // ─────────────────────────────────────────────────────────────────────────────
 
+use std::sync::Arc;
+
 use axum::{
     body::Body,
     extract::Request,
@@ -21,6 +23,7 @@ use axum::{
     Json,
 };
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+use native_interfaces::oem::{AuthPolicy, OemProfile};
 use native_interfaces::sovd::SovdErrorEnvelope;
 use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq;
@@ -86,6 +89,16 @@ impl Default for AuthConfig {
     }
 }
 
+/// Combined middleware state: transport-level auth config + OEM profile.
+///
+/// Analogous to CDA's `SecurityPluginMiddleware` pattern where the plugin
+/// is made available throughout the request lifecycle.
+#[derive(Clone)]
+pub struct AuthState {
+    pub config: AuthConfig,
+    pub oem_profile: Arc<dyn OemProfile>,
+}
+
 /// JWT claims structure
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
@@ -102,6 +115,47 @@ pub struct Claims {
     /// Roles/scopes
     #[serde(default)]
     pub roles: Vec<String>,
+    /// Vehicle Identification Number (MBDS S-SOVD §6.2)
+    #[serde(default)]
+    pub vin: Option<String>,
+    /// OAuth2 scope claim (MBDS S-SOVD §6.2)
+    #[serde(default, alias = "scp")]
+    pub scope: Option<String>,
+}
+
+/// Enforce OEM-specific claim rules via the active AuthPolicy.
+///
+/// Converts structured Claims into a generic HashMap so the policy
+/// doesn't depend on our internal JWT struct. This keeps the OemProfile
+/// trait in `native-interfaces` free of `jsonwebtoken` dependencies.
+fn enforce_claims(
+    claims: &Claims,
+    auth_policy: &dyn AuthPolicy,
+    path: &str,
+) -> Result<(), Response> {
+    let mut claim_map = std::collections::HashMap::new();
+    claim_map.insert(
+        "sub".to_owned(),
+        serde_json::Value::String(claims.sub.clone()),
+    );
+    if let Some(ref vin) = claims.vin {
+        claim_map.insert("vin".to_owned(), serde_json::Value::String(vin.clone()));
+    }
+    if let Some(ref scope) = claims.scope {
+        claim_map.insert(
+            "scope".to_owned(),
+            serde_json::Value::String(scope.clone()),
+        );
+    }
+    auth_policy
+        .validate_claims(&claim_map, path)
+        .map_err(|(status, code, message)| {
+            auth_error(
+                StatusCode::from_u16(status).unwrap_or(StatusCode::FORBIDDEN),
+                &code,
+                &message,
+            )
+        })
 }
 
 /// Build an OData-conformant JSON error response for auth failures (SOVD §5.4).
@@ -111,10 +165,13 @@ fn auth_error(status: StatusCode, code: &str, message: &str) -> Response {
 
 /// Auth middleware function — used with axum::middleware::from_fn_with_state
 pub async fn auth_middleware(
-    axum::extract::State(config): axum::extract::State<AuthConfig>,
+    axum::extract::State(auth_state): axum::extract::State<AuthState>,
     mut request: Request<Body>,
     next: Next,
 ) -> Result<Response, Response> {
+    let config = &auth_state.config;
+    let auth_policy = auth_state.oem_profile.as_auth_policy();
+
     // Skip auth if disabled
     if !config.enabled {
         return Ok(next.run(request).await);
@@ -171,12 +228,12 @@ pub async fn auth_middleware(
 
         // Try static JWT secret first
         if let Some(ref jwt_secret) = config.jwt_secret {
-            return validate_jwt(&token_owned, jwt_secret, &config, &path, next, request).await;
+            return validate_jwt(&token_owned, jwt_secret, config, auth_policy, &path, next, request).await;
         }
 
         // Try OIDC issuer (fetch JWKS dynamically)
         if let Some(ref issuer_url) = config.oidc_issuer_url {
-            return validate_oidc_jwt(&token_owned, issuer_url, &config, &path, next, request)
+            return validate_oidc_jwt(&token_owned, issuer_url, config, auth_policy, &path, next, request)
                 .await;
         }
     }
@@ -199,6 +256,7 @@ async fn validate_jwt(
     token: &str,
     secret: &str,
     config: &AuthConfig,
+    auth_policy: &dyn AuthPolicy,
     path: &str,
     next: Next,
     mut request: Request<Body>,
@@ -227,8 +285,13 @@ async fn validate_jwt(
         validation.set_issuer(&[issuer]);
     }
 
+    let token_status = StatusCode::from_u16(auth_policy.invalid_token_status())
+        .unwrap_or(StatusCode::UNAUTHORIZED);
+    let token_error_code = auth_policy.invalid_token_error_code();
+
     match decode::<Claims>(token, &decoding_key, &validation) {
         Ok(token_data) => {
+            enforce_claims(&token_data.claims, auth_policy, path)?;
             debug!(
                 path = %path,
                 sub = %token_data.claims.sub,
@@ -242,11 +305,7 @@ async fn validate_jwt(
         }
         Err(e) => {
             warn!(path = %path, error = %e, "JWT validation failed");
-            Err(auth_error(
-                StatusCode::UNAUTHORIZED,
-                "SOVD-ERR-401",
-                "JWT validation failed",
-            ))
+            Err(auth_error(token_status, token_error_code, "Invalid token"))
         }
     }
 }
@@ -390,21 +449,22 @@ async fn validate_oidc_jwt(
     token: &str,
     issuer_url: &str,
     config: &AuthConfig,
+    auth_policy: &dyn AuthPolicy,
     path: &str,
     next: Next,
     mut request: Request<Body>,
 ) -> Result<Response, Response> {
+    let token_status = StatusCode::from_u16(auth_policy.invalid_token_status())
+        .unwrap_or(StatusCode::UNAUTHORIZED);
+    let token_error_code = auth_policy.invalid_token_error_code();
+
     // 1. Get JWKS (from cache or fetch)
     let (jwks, discovered_issuer) = fetch_jwks_cached(issuer_url).await?;
 
     // 2. Decode JWT header to find kid
     let jwt_header = jsonwebtoken::decode_header(token).map_err(|e| {
         warn!(path = %path, error = %e, "JWT header decode failed");
-        auth_error(
-            StatusCode::UNAUTHORIZED,
-            "SOVD-ERR-401",
-            "JWT header decode failed",
-        )
+        auth_error(token_status, token_error_code, "JWT header decode failed")
     })?;
 
     // 3. Find matching key
@@ -415,8 +475,8 @@ async fn validate_oidc_jwt(
         .ok_or_else(|| {
             warn!(path = %path, "No matching RSA key found in JWKS");
             auth_error(
-                StatusCode::UNAUTHORIZED,
-                "SOVD-ERR-401",
+                token_status,
+                token_error_code,
                 "No matching RSA key in JWKS",
             )
         })?;
@@ -443,6 +503,7 @@ async fn validate_oidc_jwt(
 
     match decode::<Claims>(token, &decoding_key, &validation) {
         Ok(token_data) => {
+            enforce_claims(&token_data.claims, auth_policy, path)?;
             debug!(
                 path = %path,
                 sub = %token_data.claims.sub,
@@ -455,11 +516,7 @@ async fn validate_oidc_jwt(
         }
         Err(e) => {
             warn!(path = %path, error = %e, "OIDC JWT validation failed");
-            Err(auth_error(
-                StatusCode::UNAUTHORIZED,
-                "SOVD-ERR-401",
-                "OIDC JWT validation failed",
-            ))
+            Err(auth_error(token_status, token_error_code, "Invalid token"))
         }
     }
 }

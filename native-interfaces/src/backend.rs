@@ -15,8 +15,9 @@
 use async_trait::async_trait;
 
 use crate::sovd::{
-    SovdBulkDataItem, SovdBulkWriteItem, SovdCapabilities, SovdComponent, SovdComponentConfig,
-    SovdDataCatalogEntry, SovdFault, SovdGroup, SovdMode, SovdOperation,
+    SovdBulkDataCategory, SovdBulkDataItem, SovdBulkWriteItem, SovdCapabilities, SovdComponent,
+    SovdComponentConfig, SovdDataCatalogEntry, SovdFault, SovdGroup, SovdMode, SovdOperation,
+    SovdSoftwarePackage,
 };
 use crate::DiagServiceError;
 
@@ -135,11 +136,13 @@ pub trait ComponentBackend: Send + Sync {
 
     // ── Bulk Data (SOVD §7.5.3) ────────────────────────────────────────────
 
-    /// Bulk read multiple data identifiers
+    /// Bulk read multiple data identifiers.
+    /// `category` optionally filters by data category (MBDS §7.5.3): currentData, logs, trigger.
     async fn bulk_read(
         &self,
         component_id: &str,
         data_ids: &[String],
+        category: Option<SovdBulkDataCategory>,
     ) -> Result<Vec<SovdBulkDataItem>, DiagServiceError>;
 
     /// Bulk write multiple data identifiers
@@ -156,6 +159,27 @@ pub trait ComponentBackend: Send + Sync {
 
     /// Get a single group by ID
     fn get_group(&self, group_id: &str) -> Option<SovdGroup>;
+
+    // ── Software Packages (SOVD §5.5.10) ────────────────────────────────────
+
+    /// List available software packages for a component
+    fn list_software_packages(
+        &self,
+        _component_id: &str,
+    ) -> Result<Vec<SovdSoftwarePackage>, DiagServiceError> {
+        Ok(vec![])
+    }
+
+    /// Initiate installation of a software package
+    async fn install_software_package(
+        &self,
+        _component_id: &str,
+        _package_id: &str,
+    ) -> Result<SovdSoftwarePackage, DiagServiceError> {
+        Err(DiagServiceError::RequestNotSupported(
+            "software-packages not supported by this backend".into(),
+        ))
+    }
 
     // ── Extended Diagnostics (vendor extensions, x-prefixed) ────────────────
 

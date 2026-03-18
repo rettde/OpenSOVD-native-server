@@ -30,3 +30,21 @@ Thumbs.db
 # Coverage
 lcov.info
 tarpaulin-report.html
+
+# Proprietary OEM profiles (not open-source)
+# The generic oem_sample.rs serves as a template for custom implementations.
+native-sovd/src/oem_mbds.rs
+
+# External reference code (not part of this project)
+/CDA/
+
+# Node / npm (CDF validator tooling)
+node_modules/
+package.json
+package-lock.json
+
+# Generated artifacts
+openapi-spec.json
+
+# CDF validator (separate tool)
+/sovd-cdf-validator/

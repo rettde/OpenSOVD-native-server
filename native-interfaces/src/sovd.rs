@@ -71,6 +71,9 @@ pub struct SovdFault {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Fault scope (MBDS §7.1): e.g. "component", "system", "network"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -347,13 +350,47 @@ pub struct SovdComponentConfig {
     pub parameters: serde_json::Value,
 }
 
+// ── Software Packages (SOVD Standard §5.5.10) ────────────────────────────
+
+/// SOVD software package resource
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SovdSoftwarePackage {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub status: SovdSoftwarePackageStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SovdSoftwarePackageStatus {
+    Available,
+    Installing,
+    Installed,
+    Failed,
+}
+
 // ── Bulk Data (SOVD Standard §7.5.3) ─────────────────────────────────────
+
+/// Bulk data categories (MBDS §7.5.3)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SovdBulkDataCategory {
+    CurrentData,
+    Logs,
+    Trigger,
+}
 
 /// Bulk data read request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SovdBulkReadRequest {
     #[serde(rename = "dataIds")]
     pub data_ids: Vec<String>,
+    /// Data category filter (MBDS §7.5.3): currentData, logs, trigger
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<SovdBulkDataCategory>,
 }
 
 /// Bulk data read response item
@@ -461,6 +498,7 @@ mod tests {
             status: SovdFaultStatus::Active,
             name: "Sensor fault".into(),
             description: None,
+            scope: None,
         };
         let json = serde_json::to_string(&fault).unwrap();
         let deser: SovdFault = serde_json::from_str(&json).unwrap();
@@ -479,6 +517,7 @@ mod tests {
             status: SovdFaultStatus::Active,
             name: "Sensor fault".into(),
             description: None,
+            scope: None,
         };
         let json = serde_json::to_value(&fault).unwrap();
         // Must be "displayCode" (camelCase), NOT "display_code" (snake_case)
@@ -500,6 +539,7 @@ mod tests {
             status: SovdFaultStatus::Passive,
             name: "Minor fault".into(),
             description: None,
+            scope: None,
         };
         let json = serde_json::to_value(&fault).unwrap();
         assert!(
@@ -794,11 +834,21 @@ mod tests {
     fn sovd_bulk_read_request_roundtrip() {
         let req = SovdBulkReadRequest {
             data_ids: vec!["F190".into(), "F187".into()],
+            category: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"dataIds\""));
         let deser: SovdBulkReadRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(deser.data_ids.len(), 2);
+        assert!(deser.category.is_none());
+
+        // With category
+        let req2 = SovdBulkReadRequest {
+            data_ids: vec!["F190".into()],
+            category: Some(SovdBulkDataCategory::Logs),
+        };
+        let json2 = serde_json::to_string(&req2).unwrap();
+        assert!(json2.contains("\"category\":\"logs\""));
     }
 
     #[test]

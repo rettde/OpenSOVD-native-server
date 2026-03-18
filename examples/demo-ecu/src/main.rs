@@ -820,11 +820,11 @@ async fn main() {
             post(execute_operation),
         )
         // Mode (§7.6)
-        .route("/sovd/v1/components/{component_id}/mode", get(get_mode))
-        .route("/sovd/v1/components/{component_id}/mode", post(set_mode))
+        .route("/sovd/v1/components/{component_id}/modes", get(get_mode))
+        .route("/sovd/v1/components/{component_id}/modes", post(set_mode))
         // Configuration (§7.8)
         .route(
-            "/sovd/v1/components/{component_id}/config",
+            "/sovd/v1/components/{component_id}/configurations",
             get(read_config),
         )
         .with_state(state);

@@ -7,6 +7,42 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.6.0] — 2026-03-18
+
+### Architecture
+- **OEM Plugin Interface** (CDA-inspired trait hierarchy):
+  - `OemProfile` supertrait combining `AuthPolicy`, `EntityIdPolicy`, `DiscoveryPolicy`, `CdfPolicy`
+  - Defined in `native-interfaces/src/oem.rs`, injected as `Arc<dyn OemProfile>` into `AppState`
+  - `DefaultProfile` (permissive, standard SOVD) in `native-interfaces`
+  - `SampleOemProfile` template in `native-sovd/src/oem_sample.rs` with extensive documentation
+- **Auto-detection of proprietary OEM profiles** via `build.rs`:
+  - Any `src/oem_*.rs` file (except `oem_sample.rs`) is auto-detected at compile time
+  - Emits `cfg(has_oem_<name>)` — no Cargo feature flags needed
+  - Proprietary profiles are `.gitignore`d, open-source builds use `SampleOemProfile`
+- **AuthState**: bundles `AuthConfig` + `Arc<dyn OemProfile>` for the auth middleware
+- MBDS-specific fields (`required_vin`, `allowed_scopes`) removed from `AuthConfig` → live in OEM profile
+
+### Refactoring
+- `auth_middleware` delegates token validation/claim checks to `AuthPolicy`
+- `entity_id_validation_middleware` delegates to `EntityIdPolicy` via closure capture
+- `build_openapi_json_with_policy` accepts `&dyn CdfPolicy` for `x-sovd-*` extensions
+- `serve_docs` handler extracts `CdfPolicy` from `AppState`
+- Removed hardcoded `validate_entity_id()` function
+- Removed hardcoded MBDS scopes/VIN/403-status from auth module
+
+### Documentation
+- `ADR-0001` updated with implemented architecture, isolation strategy, verification results
+- `oem_sample.rs`: step-by-step guide (Copy → Rename → Implement → Register) with
+  examples for VIN-binding, scope-ceiling, region-restriction, workshop-ID,
+  entity-ID format, CDF extensions, proximity proof, and more
+
+### Testing
+- **168 tests** with OEM profile present, **161 tests** without (open-source build)
+- New tests in `oem_sample.rs`: `sample_profile_uses_standard_defaults`, `sample_profile_metadata`
+- Clippy pedantic clean across entire workspace (both configurations)
+
+---
+
 ## [0.5.0] — 2026-03-14
 
 ### Architecture

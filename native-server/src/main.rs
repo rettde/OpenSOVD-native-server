@@ -26,7 +26,7 @@ use native_core::{
 };
 use native_health::HealthMonitor;
 use native_interfaces::ComponentBackend;
-use native_sovd::{build_router, AppState, AuthConfig};
+use native_sovd::{build_router, AppState, AuthConfig, DltConfig, DltLayer, MdnsConfig, MdnsHandle};
 
 use native_comm_someip::{SomeIpConfig, SomeIpRuntime};
 
@@ -44,6 +44,10 @@ struct AppConfig {
     auth: AuthConfig,
     #[serde(default)]
     someip: SomeIpConfig,
+    #[serde(default)]
+    mdns: MdnsConfig,
+    #[serde(default)]
+    dlt: DltConfig,
 
     // ── Backend configuration ───────────────────────────────────────────
     /// External SOVD backends (CDA instances, native SOVD endpoints)
@@ -61,6 +65,11 @@ struct ServerConfig {
     /// Path to TLS private key file (PEM)
     #[serde(default)]
     key_path: Option<String>,
+    /// Path to CA certificate file (PEM) for mutual TLS client verification.
+    /// When set alongside cert_path/key_path, the server requires client certificates
+    /// signed by this CA (MBDS S-SOVD §6.3).
+    #[serde(default)]
+    client_ca_path: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -70,6 +79,7 @@ impl Default for ServerConfig {
             port: 8080,
             cert_path: None,
             key_path: None,
+            client_ca_path: None,
         }
     }
 }
@@ -106,10 +116,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             serde_json::from_str("{}").unwrap()
         });
 
-    // Initialize tracing
+    // Initialize tracing (with optional DLT layer)
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.logging.level));
-    fmt().with_env_filter(filter).init();
+    let dlt_layer = DltLayer::new(&config.dlt);
+    {
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(fmt::layer())
+            .with(dlt_layer)
+            .init();
+    }
 
     info!("OpenSOVD-native-server starting");
     info!("Server: {}:{}", config.server.host, config.server.port);
@@ -176,8 +195,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // ── Build axum app ──────────────────────────────────────────────────
+    // OEM profile is auto-detected at compile time by native-sovd/build.rs:
+    // If src/oem_mbds.rs exists → cfg(has_oem_mbds) is set → MbdsProfile used.
+    // Otherwise → SampleOemProfile (standard SOVD) is the fallback.
+    let oem_profile: Arc<dyn native_interfaces::oem::OemProfile> = {
+        #[cfg(has_oem_mbds)]
+        {
+            Arc::new(native_sovd::MbdsProfile::default())
+        }
+        #[cfg(not(has_oem_mbds))]
+        {
+            Arc::new(native_sovd::SampleOemProfile)
+        }
+    };
+    tracing::info!(profile = oem_profile.name(), "OEM profile loaded");
+
     let state = AppState {
         backend: router,
+        oem_profile,
         fault_manager,
         lock_manager,
         diag_log,
@@ -190,12 +225,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── Start server ────────────────────────────────────────────────────
     let bind_addr = format!("{}:{}", config.server.host, config.server.port);
 
+    // ── mDNS/DNS-SD Discovery (MBDS §4.2) ────────────────────────────
+    let _mdns_handle = MdnsHandle::register(&config.mdns, config.server.port);
+
     if let (Some(cert_path), Some(key_path)) = (&config.server.cert_path, &config.server.key_path) {
         // TLS mode (SOVD §5.3)
         use axum_server::tls_rustls::RustlsConfig;
-        let tls_config = RustlsConfig::from_pem_file(cert_path, key_path)
-            .await
-            .map_err(|e| format!("TLS config error: {e}"))?;
+
+        let tls_config = if let Some(ref ca_path) = config.server.client_ca_path {
+            // mTLS mode — require client certificates (MBDS §6.3)
+            info!("mTLS enabled — client CA: {ca_path}");
+            build_mtls_config(cert_path, key_path, ca_path).await?
+        } else {
+            RustlsConfig::from_pem_file(cert_path, key_path)
+                .await
+                .map_err(|e| format!("TLS config error: {e}"))?
+        };
+
         info!("SOVD API listening on https://{bind_addr}/sovd/v1 (TLS enabled)");
         axum_server::bind_rustls(bind_addr.parse()?, tls_config)
             .serve(app.into_make_service())
@@ -215,6 +261,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("OpenSOVD-native-server stopped");
 
     Ok(())
+}
+
+/// Build a TLS config with mutual TLS (client certificate verification).
+async fn build_mtls_config(
+    cert_path: &str,
+    key_path: &str,
+    client_ca_path: &str,
+) -> Result<axum_server::tls_rustls::RustlsConfig, Box<dyn std::error::Error>> {
+    use std::io::BufReader;
+
+    // Read server cert chain
+    let cert_pem = tokio::fs::read(cert_path).await?;
+    let certs: Vec<_> = rustls_pemfile::certs(&mut BufReader::new(&cert_pem[..]))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Read server private key
+    let key_pem = tokio::fs::read(key_path).await?;
+    let key = rustls_pemfile::private_key(&mut BufReader::new(&key_pem[..]))?
+        .ok_or("No private key found in PEM file")?;
+
+    // Read client CA for verification
+    let ca_pem = tokio::fs::read(client_ca_path).await?;
+    let mut root_store = rustls::RootCertStore::empty();
+    for cert in rustls_pemfile::certs(&mut BufReader::new(&ca_pem[..])) {
+        root_store.add(cert?)?;
+    }
+
+    let client_verifier = rustls::server::WebPkiClientVerifier::builder(Arc::new(root_store))
+        .build()
+        .map_err(|e| format!("Client verifier error: {e}"))?;
+
+    let mut server_config = rustls::ServerConfig::builder()
+        .with_client_cert_verifier(client_verifier)
+        .with_single_cert(certs, key)
+        .map_err(|e| format!("ServerConfig error: {e}"))?;
+
+    server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+
+    Ok(axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(server_config)))
 }
 
 async fn shutdown_signal() {

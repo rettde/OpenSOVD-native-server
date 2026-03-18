@@ -15,6 +15,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use native_core::{DiagLog, FaultManager, LockManager};
 use native_health::HealthMonitor;
+use native_interfaces::oem::OemProfile;
 use native_interfaces::sovd::{SovdOperationExecution, SovdProximityChallenge};
 use native_interfaces::ComponentBackend;
 
@@ -23,6 +24,8 @@ use native_interfaces::ComponentBackend;
 pub struct AppState {
     /// Gateway backend — dispatches to CDA (HTTP) or local UDS/DoIP
     pub backend: Arc<dyn ComponentBackend>,
+    /// OEM profile — vendor-specific rules (auth, entity IDs, CDF, discovery)
+    pub oem_profile: Arc<dyn OemProfile>,
     /// Diagnostic Fault Manager (DFM) — aggregates faults from all sources
     pub fault_manager: Arc<FaultManager>,
     pub lock_manager: Arc<LockManager>,

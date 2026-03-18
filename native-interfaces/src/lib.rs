@@ -10,10 +10,12 @@
 pub mod backend;
 pub mod diag;
 pub mod error;
+pub mod oem;
 pub mod sovd;
 
 // Re-export key types at crate root
 pub use backend::ComponentBackend;
+pub use oem::{DefaultProfile, OemProfile};
 pub use diag::{
     service_ids, DiagTransport, DiagnosticSession, EcuConnectionState, ServicePayload,
     TesterPresentMode, TesterPresentType, UdsResponse,

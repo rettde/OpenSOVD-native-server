@@ -20,8 +20,9 @@ use tracing::debug;
 
 use native_interfaces::{
     sovd::{
-        SovdBulkDataItem, SovdBulkWriteItem, SovdCapabilities, SovdComponent, SovdComponentConfig,
-        SovdDataCatalogEntry, SovdFault, SovdGroup, SovdMode, SovdOperation,
+        SovdBulkDataCategory, SovdBulkDataItem, SovdBulkWriteItem, SovdCapabilities,
+        SovdComponent, SovdComponentConfig, SovdDataCatalogEntry, SovdFault, SovdGroup, SovdMode,
+        SovdOperation, SovdSoftwarePackage,
     },
     ComponentBackend, DiagServiceError,
 };
@@ -212,9 +213,10 @@ impl ComponentBackend for ComponentRouter {
         &self,
         component_id: &str,
         data_ids: &[String],
+        category: Option<SovdBulkDataCategory>,
     ) -> Result<Vec<SovdBulkDataItem>, DiagServiceError> {
         self.backend_for(component_id)?
-            .bulk_read(component_id, data_ids)
+            .bulk_read(component_id, data_ids, category)
             .await
     }
 
@@ -236,6 +238,26 @@ impl ComponentBackend for ComponentRouter {
 
     fn get_group(&self, group_id: &str) -> Option<SovdGroup> {
         self.backends.iter().find_map(|b| b.get_group(group_id))
+    }
+
+    // ── Software Packages ───────────────────────────────────────────────────
+
+    fn list_software_packages(
+        &self,
+        component_id: &str,
+    ) -> Result<Vec<SovdSoftwarePackage>, DiagServiceError> {
+        self.backend_for(component_id)?
+            .list_software_packages(component_id)
+    }
+
+    async fn install_software_package(
+        &self,
+        component_id: &str,
+        package_id: &str,
+    ) -> Result<SovdSoftwarePackage, DiagServiceError> {
+        self.backend_for(component_id)?
+            .install_software_package(component_id, package_id)
+            .await
     }
 
     // ── Extended diagnostics — dispatch to owning backend ───────────────────
@@ -414,6 +436,7 @@ mod tests {
             &self,
             _: &str,
             _: &[String],
+            _: Option<SovdBulkDataCategory>,
         ) -> Result<Vec<SovdBulkDataItem>, DiagServiceError> {
             Ok(vec![])
         }

@@ -240,6 +240,7 @@ mod tests {
             status: SovdFaultStatus::Active,
             name: format!("Fault {id}"),
             description: None,
+            scope: None,
         }
     }
 

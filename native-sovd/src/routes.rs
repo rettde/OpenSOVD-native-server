@@ -22,8 +22,63 @@ use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 
-use super::auth::{auth_middleware, AuthConfig, AuthenticatedClient};
+use super::auth::{auth_middleware, AuthConfig, AuthState, AuthenticatedClient};
 use super::state::AppState;
+
+/// Entity-ID validation middleware — delegates to OemProfile::EntityIdPolicy.
+///
+/// Intercepts every request, extracts dynamic path segments by comparing the matched
+/// route template (e.g. `/components/{component_id}`) with the actual URI, and rejects
+/// any segment that violates the profile's naming rules with 400 Bad Request.
+///
+/// This middleware is OEM-agnostic: the actual validation rules come from the
+/// `OemProfile` injected at startup (DefaultProfile = permissive, MbdsProfile = DDAG §2.3).
+async fn entity_id_validation_middleware(
+    profile: std::sync::Arc<dyn native_interfaces::oem::OemProfile>,
+    matched_path: Option<axum::extract::MatchedPath>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Result<axum::response::Response, (StatusCode, Json<SovdErrorEnvelope>)> {
+    if let Some(ref matched) = matched_path {
+        let template_segments: Vec<&str> = matched.as_str().split('/').collect();
+        let uri_segments: Vec<&str> = request.uri().path().split('/').collect();
+        let policy = profile.as_entity_id_policy();
+        for (tmpl, actual) in template_segments.iter().zip(uri_segments.iter()) {
+            if tmpl.starts_with('{') && tmpl.ends_with('}') {
+                policy
+                    .validate_entity_id(actual)
+                    .map_err(|reason| bad_request(&reason))?;
+            }
+        }
+    }
+    Ok(next.run(request).await)
+}
+
+/// Trace-ID propagation middleware (MBDS §8 / W3C Trace Context).
+/// Reads `traceparent` or `x-request-id` from request; if absent, generates a new UUID.
+/// Injects `traceparent` into every response for distributed tracing.
+async fn trace_id_middleware(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let trace_id = request
+        .headers()
+        .get("traceparent")
+        .or_else(|| request.headers().get("x-request-id"))
+        .and_then(|v| v.to_str().ok())
+        .map_or_else(
+            || {
+                let id = uuid::Uuid::new_v4().simple().to_string();
+                format!("00-{id}-{}-01", &id[..16])
+            },
+            String::from,
+        );
+    let mut resp = next.run(request).await;
+    if let Ok(val) = http::HeaderValue::from_str(&trace_id) {
+        resp.headers_mut().insert("traceparent", val);
+    }
+    resp
+}
 
 // ── Caller identity (SOVD §7.4 — lock ownership) ─────────────────────────
 
@@ -287,18 +342,38 @@ pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
         .route("/components/{component_id}/lock", get(get_lock))
         .route("/components/{component_id}/lock", delete(release_lock))
         // Mode / Session (§7.6)
-        .route("/components/{component_id}/mode", get(get_mode))
-        .route("/components/{component_id}/mode", post(set_mode))
+        .route("/components/{component_id}/modes", get(get_mode))
+        .route("/components/{component_id}/modes", post(set_mode))
+        .route(
+            "/components/{component_id}/modes/{mode_id}",
+            put(activate_mode),
+        )
+        // Software Packages (§5.5.10)
+        .route(
+            "/components/{component_id}/software-packages",
+            get(list_software_packages),
+        )
+        .route(
+            "/components/{component_id}/software-packages/{package_id}",
+            post(install_software_package),
+        )
+        .route(
+            "/components/{component_id}/software-packages/{package_id}/status",
+            get(get_software_package_status),
+        )
+        // Entity collection stubs (§4.2.3)
+        .route("/apps", get(list_apps))
+        .route("/funcs", get(list_funcs))
         // Configuration (§7.8)
-        .route("/components/{component_id}/config", get(read_config))
-        .route("/components/{component_id}/config", put(write_config))
+        .route("/components/{component_id}/configurations", get(read_config))
+        .route("/components/{component_id}/configurations", put(write_config))
         // Proximity Challenge (§7.9)
         .route(
-            "/components/{component_id}/proximityChallenge",
+            "/components/{component_id}/proximity-challenge",
             post(proximity_challenge),
         )
         .route(
-            "/components/{component_id}/proximityChallenge/{challenge_id}",
+            "/components/{component_id}/proximity-challenge/{challenge_id}",
             get(get_proximity_challenge),
         )
         // Logs (§7.10)
@@ -308,6 +383,18 @@ pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
             "/components/{component_id}/faults/subscribe",
             get(subscribe_faults),
         )
+        // Version info (SOVD §4.1)
+        .route("/version-info", get(version_info))
+        // Capability docs — wildcard (SOVD §5.1)
+        .route("/docs", get(serve_docs))
+        .route("/components/{component_id}/docs", get(serve_docs))
+        .route("/components/{component_id}/data/docs", get(serve_docs))
+        .route("/components/{component_id}/faults/docs", get(serve_docs))
+        .route("/components/{component_id}/operations/docs", get(serve_docs))
+        .route("/components/{component_id}/modes/docs", get(serve_docs))
+        .route("/components/{component_id}/locks/docs", get(serve_docs))
+        .route("/components/{component_id}/configurations/docs", get(serve_docs))
+        .route("/components/{component_id}/logs/docs", get(serve_docs))
         // OData metadata (§5.2)
         .route("/$metadata", get(odata_metadata))
         // Health (non-SOVD, operational)
@@ -337,6 +424,9 @@ pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
         .route("/components/{component_id}/flash", post(start_flash))
         .route("/diag/keepalive", get(keepalive_status))
         .with_state(state.clone());
+
+    // ── OEM profile (captured for middleware closure) ──────────────────
+    let oem_profile = state.oem_profile.clone();
 
     // ── OpenAPI spec ──────────────────────────────────────────────────
     let openapi_json = Arc::new(super::openapi::build_openapi_json());
@@ -395,9 +485,17 @@ pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
             }),
         )
         .layer(axum::middleware::from_fn_with_state(
-            auth_config,
+            AuthState {
+                config: auth_config,
+                oem_profile: state.oem_profile.clone(),
+            },
             auth_middleware,
         ))
+        .layer(axum::middleware::from_fn(move |matched_path, request, next| {
+            let profile = oem_profile.clone();
+            entity_id_validation_middleware(profile, matched_path, request, next)
+        }))
+        .layer(axum::middleware::from_fn(trace_id_middleware))
         .layer(TraceLayer::new_for_http())
         .layer(concurrency_limit)
         .layer(TimeoutLayer::with_status_code(
@@ -454,6 +552,68 @@ async fn server_info() -> Json<ServerInfo> {
         description: Some("Native SOVD server — Eclipse OpenSOVD ecosystem"),
         supported_protocols: vec!["http/1.1", "http/2"],
     })
+}
+
+/// SOVD §4.1 — version info endpoint
+#[derive(Serialize)]
+struct VersionInfo {
+    #[serde(rename = "sovdVersion")]
+    sovd_version: &'static str,
+    #[serde(rename = "serverVersion")]
+    server_version: String,
+    #[serde(rename = "apiVersions")]
+    api_versions: Vec<ApiVersionEntry>,
+}
+
+#[derive(Serialize)]
+struct ApiVersionEntry {
+    version: &'static str,
+    url: &'static str,
+    status: &'static str,
+}
+
+async fn version_info() -> Json<VersionInfo> {
+    Json(VersionInfo {
+        sovd_version: "1.1.0",
+        server_version: env!("CARGO_PKG_VERSION").to_owned(),
+        api_versions: vec![ApiVersionEntry {
+            version: "v1",
+            url: "/sovd/v1",
+            status: "active",
+        }],
+    })
+}
+
+/// SOVD §5.1 — capability docs per resource (returns filtered OpenAPI spec).
+/// Extracts the resource segment before `/docs` from the matched route template
+/// and returns only the paths relevant to that resource category.
+/// CDF extension values (`x-sovd-*`) are supplied by the active OemProfile's CdfPolicy.
+async fn serve_docs(
+    State(state): State<AppState>,
+    matched_path: Option<axum::extract::MatchedPath>,
+) -> Json<serde_json::Value> {
+    // Extract the resource segment directly before "/docs" in the route template.
+    // e.g. "/sovd/v1/components/{component_id}/data/docs" → "data"
+    //      "/sovd/v1/docs" → None (full spec)
+    let filter = matched_path.as_ref().and_then(|mp| {
+        let path = mp.as_str();
+        let segments: Vec<&str> = path.trim_end_matches('/').rsplit('/').collect();
+        // segments[0] == "docs", segments[1] == the resource category (if present)
+        if segments.len() >= 2 && segments[0] == "docs" {
+            let candidate = segments[1];
+            // If the segment is a path parameter like {component_id}, it's not a category
+            if candidate.starts_with('{') {
+                // /components/{component_id}/docs → filter on "components"
+                // But this is a component-level docs, return discovery/component paths
+                return Some("components");
+            }
+            Some(candidate)
+        } else {
+            None
+        }
+    });
+    let cdf = state.oem_profile.as_cdf_policy();
+    Json(super::openapi::build_openapi_json_with_policy(cdf, filter))
 }
 
 // ── Components ──────────────────────────────────────────────────────────────
@@ -1176,7 +1336,7 @@ async fn bulk_read(
 ) -> Result<Json<Collection<serde_json::Value>>, (StatusCode, Json<SovdErrorEnvelope>)> {
     let results = state
         .backend
-        .bulk_read(&component_id, &body.data_ids)
+        .bulk_read(&component_id, &body.data_ids, body.category)
         .await
         .map_err(|ref e| diag_error(e))?;
     let values: Vec<serde_json::Value> = results
@@ -1470,6 +1630,122 @@ async fn set_mode(
         .map_err(|ref e| diag_error(e))?;
 
     Ok(Json(mode))
+}
+
+/// PUT /modes/{modeId} — activate a specific mode (ASAM SOVD §5.5.4)
+///
+/// Also maps special modes to backend operations:
+///   "dtc-on"  → backend.dtc_setting(component_id, "on")
+///   "dtc-off" → backend.dtc_setting(component_id, "off")
+async fn activate_mode(
+    State(state): State<AppState>,
+    caller: CallerIdentity,
+    Path((component_id, mode_id)): Path<(String, String)>,
+) -> Result<Json<SovdMode>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    require_unlocked_or_owner(&state.lock_manager, &component_id, &caller.0)?;
+
+    // Map DTC setting modes to backend dtc_setting (Item 7: dtc-setting → modes)
+    match mode_id.as_str() {
+        "dtc-on" => {
+            state
+                .backend
+                .dtc_setting(&component_id, "on")
+                .await
+                .map_err(|ref e| diag_error(e))?;
+        }
+        "dtc-off" => {
+            state
+                .backend
+                .dtc_setting(&component_id, "off")
+                .await
+                .map_err(|ref e| diag_error(e))?;
+        }
+        _ => {
+            state
+                .backend
+                .set_mode(&component_id, &mode_id)
+                .await
+                .map_err(|ref e| diag_error(e))?;
+        }
+    }
+
+    let mode = state
+        .backend
+        .get_mode(&component_id)
+        .map_err(|ref e| diag_error(e))?;
+    Ok(Json(mode))
+}
+
+// ── Software Packages (SOVD §5.5.10) ────────────────────────────────────
+
+async fn list_software_packages(
+    State(state): State<AppState>,
+    Path(component_id): Path<String>,
+    axum::extract::Query(params): axum::extract::Query<PaginationParams>,
+) -> Result<Json<Collection<serde_json::Value>>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    let packages = state
+        .backend
+        .list_software_packages(&component_id)
+        .map_err(|e| not_found(&e.to_string()))?;
+    Ok(Json(
+        paginate(packages, &params)?.with_context("$metadata#softwarePackages"),
+    ))
+}
+
+async fn install_software_package(
+    State(state): State<AppState>,
+    caller: CallerIdentity,
+    Path((component_id, package_id)): Path<(String, String)>,
+) -> Result<(StatusCode, Json<SovdSoftwarePackage>), (StatusCode, Json<SovdErrorEnvelope>)> {
+    require_unlocked_or_owner(&state.lock_manager, &component_id, &caller.0)?;
+    let pkg = state
+        .backend
+        .install_software_package(&component_id, &package_id)
+        .await
+        .map_err(|ref e| diag_error(e))?;
+    Ok((StatusCode::ACCEPTED, Json(pkg)))
+}
+
+async fn get_software_package_status(
+    State(state): State<AppState>,
+    Path((component_id, package_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    let packages = state
+        .backend
+        .list_software_packages(&component_id)
+        .map_err(|e| not_found(&e.to_string()))?;
+    let pkg = packages
+        .into_iter()
+        .find(|p| p.id == package_id)
+        .ok_or_else(|| {
+            not_found(&format!(
+                "Software package '{package_id}' not found for component '{component_id}'"
+            ))
+        })?;
+    Ok(Json(serde_json::json!({
+        "packageId": pkg.id,
+        "status": pkg.status,
+    })))
+}
+
+// ── Entity Collection Stubs (ASAM SOVD §4.2.3) ─────────────────────────
+
+async fn list_apps(
+    axum::extract::Query(params): axum::extract::Query<PaginationParams>,
+) -> Result<Json<Collection<serde_json::Value>>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    let items: Vec<serde_json::Value> = vec![];
+    Ok(Json(
+        paginate(items, &params)?.with_context("$metadata#apps"),
+    ))
+}
+
+async fn list_funcs(
+    axum::extract::Query(params): axum::extract::Query<PaginationParams>,
+) -> Result<Json<Collection<serde_json::Value>>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    let items: Vec<serde_json::Value> = vec![];
+    Ok(Json(
+        paginate(items, &params)?.with_context("$metadata#funcs"),
+    ))
 }
 
 // ── Configuration (SOVD §7.8) ───────────────────────────────────────────
@@ -1767,6 +2043,7 @@ mod tests {
             &self,
             _: &str,
             _: &[String],
+            _: Option<native_interfaces::sovd::SovdBulkDataCategory>,
         ) -> Result<
             Vec<native_interfaces::sovd::SovdBulkDataItem>,
             native_interfaces::DiagServiceError,
@@ -1856,6 +2133,7 @@ mod tests {
 
         AppState {
             backend: router,
+            oem_profile: Arc::new(native_interfaces::DefaultProfile),
             fault_manager: Arc::new(FaultManager::new()),
             lock_manager: Arc::new(LockManager::new()),
             diag_log: Arc::new(DiagLog::new()),
@@ -2257,7 +2535,7 @@ mod tests {
         let app = test_router();
         let resp = app
             .oneshot(
-                Request::get("/sovd/v1/components/hpc/mode")
+                Request::get("/sovd/v1/components/hpc/modes")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -2406,7 +2684,7 @@ mod tests {
         let resp = app
             .clone()
             .oneshot(
-                Request::post("/sovd/v1/components/hpc/proximityChallenge")
+                Request::post("/sovd/v1/components/hpc/proximity-challenge")
                     .header("content-type", "application/json")
                     .body(Body::from(r#"{}"#))
                     .unwrap(),
@@ -2424,7 +2702,7 @@ mod tests {
         let resp = app
             .oneshot(
                 Request::get(format!(
-                    "/sovd/v1/components/hpc/proximityChallenge/{challenge_id}"
+                    "/sovd/v1/components/hpc/proximity-challenge/{challenge_id}"
                 ))
                 .body(Body::empty())
                 .unwrap(),
@@ -2472,7 +2750,106 @@ mod tests {
         let app = test_router();
         let resp = app
             .oneshot(
-                Request::get("/sovd/v1/components/hpc/config")
+                Request::get("/sovd/v1/components/hpc/configurations")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    // ── Entity collection stubs (§4.2.3) ─────────────────────────────────
+
+    #[tokio::test]
+    async fn apps_returns_empty_collection() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/apps")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["@odata.count"], 0);
+        assert_eq!(json["@odata.context"], "$metadata#apps");
+    }
+
+    #[tokio::test]
+    async fn funcs_returns_empty_collection() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/funcs")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["@odata.count"], 0);
+        assert_eq!(json["@odata.context"], "$metadata#funcs");
+    }
+
+    // ── Software packages (§5.5.10) ──────────────────────────────────────
+
+    #[tokio::test]
+    async fn software_packages_returns_empty_collection() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/components/hpc/software-packages")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["@odata.count"], 0);
+        assert_eq!(json["@odata.context"], "$metadata#softwarePackages");
+    }
+
+    // ── PUT /modes/{modeId} (§5.5.4) ────────────────────────────────────
+
+    #[tokio::test]
+    async fn activate_mode_by_id() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::put("/sovd/v1/components/hpc/modes/extended")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["componentId"], "hpc");
+    }
+
+    #[tokio::test]
+    async fn activate_dtc_mode_maps_to_dtc_setting() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::put("/sovd/v1/components/hpc/modes/dtc-off")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -2573,6 +2950,7 @@ mod mock_backend_tests {
                 status: SovdFaultStatus::Active,
                 name: "Mass Air Flow".into(),
                 description: Some("MAF sensor circuit malfunction".into()),
+                scope: Some("component".into()),
             }])
         }
 
@@ -2636,6 +3014,7 @@ mod mock_backend_tests {
             &self,
             _: &str,
             ids: &[String],
+            _: Option<SovdBulkDataCategory>,
         ) -> Result<Vec<SovdBulkDataItem>, DiagServiceError> {
             Ok(ids
                 .iter()
@@ -2719,6 +3098,7 @@ mod mock_backend_tests {
         let router = Arc::new(ComponentRouter::new(vec![backend]));
         AppState {
             backend: router,
+            oem_profile: Arc::new(native_interfaces::DefaultProfile),
             fault_manager: Arc::new(FaultManager::new()),
             lock_manager: Arc::new(LockManager::new()),
             diag_log: Arc::new(DiagLog::new()),
@@ -2975,7 +3355,7 @@ mod mock_backend_tests {
         let app = mock_router();
         let resp = app
             .oneshot(
-                Request::get("/sovd/v1/components/mock-ecu/mode")
+                Request::get("/sovd/v1/components/mock-ecu/modes")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -2997,7 +3377,7 @@ mod mock_backend_tests {
         let app = mock_router();
         let resp = app
             .oneshot(
-                Request::get("/sovd/v1/components/mock-ecu/config")
+                Request::get("/sovd/v1/components/mock-ecu/configurations")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -3502,7 +3882,7 @@ mod mock_backend_tests {
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["openapi"], "3.1.0");
-        assert_eq!(json["info"]["title"], "OpenSOVD-native-server API");
+        assert_eq!(json["info"]["title"], "OpenSOVD-native-server CDF");
         assert_eq!(json["info"]["version"], "1.1.0");
         assert!(json["paths"].is_object());
         assert!(json["paths"]["/components"].is_object());

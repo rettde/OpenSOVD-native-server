@@ -24,9 +24,9 @@ use tracing::{debug, info, warn};
 
 use native_interfaces::{
     sovd::{
-        Collection, SovdBulkDataItem, SovdBulkReadRequest, SovdBulkWriteItem, SovdCapabilities,
-        SovdComponent, SovdComponentConfig, SovdConnectionState, SovdDataCatalogEntry, SovdFault,
-        SovdGroup, SovdMode, SovdOperation,
+        Collection, SovdBulkDataCategory, SovdBulkDataItem, SovdBulkReadRequest,
+        SovdBulkWriteItem, SovdCapabilities, SovdComponent, SovdComponentConfig,
+        SovdConnectionState, SovdDataCatalogEntry, SovdFault, SovdGroup, SovdMode, SovdOperation,
     },
     ComponentBackend, DiagServiceError,
 };
@@ -424,7 +424,7 @@ impl ComponentBackend for SovdHttpBackend {
 
     async fn set_mode(&self, component_id: &str, mode: &str) -> Result<(), DiagServiceError> {
         self.post_json::<serde_json::Value>(
-            &format!("/components/{component_id}/mode"),
+            &format!("/components/{component_id}/modes"),
             &serde_json::json!({ "mode": mode }),
         )
         .await?;
@@ -435,7 +435,7 @@ impl ComponentBackend for SovdHttpBackend {
         &self,
         component_id: &str,
     ) -> Result<SovdComponentConfig, DiagServiceError> {
-        self.get_json(&format!("/components/{component_id}/config"))
+        self.get_json(&format!("/components/{component_id}/configurations"))
             .await
     }
 
@@ -446,7 +446,7 @@ impl ComponentBackend for SovdHttpBackend {
         value: &[u8],
     ) -> Result<(), DiagServiceError> {
         self.put_json(
-            &format!("/components/{component_id}/config"),
+            &format!("/components/{component_id}/configurations"),
             &serde_json::json!({ "name": param_name, "value": hex::encode(value) }),
         )
         .await
@@ -456,9 +456,11 @@ impl ComponentBackend for SovdHttpBackend {
         &self,
         component_id: &str,
         data_ids: &[String],
+        category: Option<SovdBulkDataCategory>,
     ) -> Result<Vec<SovdBulkDataItem>, DiagServiceError> {
         let body = SovdBulkReadRequest {
             data_ids: data_ids.to_vec(),
+            category,
         };
         let collection: Collection<SovdBulkDataItem> = self
             .post_json(&format!("/components/{component_id}/data/bulk-read"), &body)
