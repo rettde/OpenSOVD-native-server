@@ -428,7 +428,7 @@ pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
         .with_state(state.clone());
 
     // ── OEM profile (captured for middleware closure) ──────────────────
-    let oem_profile = state.oem_profile.clone();
+    let oem_profile = state.security.oem_profile.clone();
 
     // ── OpenAPI spec ──────────────────────────────────────────────────
     let openapi_json = Arc::new(super::openapi::build_openapi_json());
@@ -492,8 +492,8 @@ pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
         .layer(axum::middleware::from_fn_with_state(
             AuthState {
                 config: auth_config,
-                oem_profile: state.oem_profile.clone(),
-                audit_log: state.audit_log.clone(),
+                oem_profile: state.security.oem_profile.clone(),
+                audit_log: state.security.audit_log.clone(),
             },
             auth_middleware,
         ))
@@ -618,7 +618,7 @@ async fn serve_docs(
             None
         }
     });
-    let cdf = state.oem_profile.as_cdf_policy();
+    let cdf = state.security.oem_profile.as_cdf_policy();
     Json(super::openapi::build_openapi_json_with_policy(cdf, filter))
 }
 
@@ -729,7 +729,7 @@ async fn connect_component(
         .connect(&component_id)
         .await
         .map_err(|ref e| diag_error(e))?;
-    state.audit_log.record(
+    state.security.audit_log.record(
         "anonymous", SovdAuditAction::Connect,
         &format!("component/{component_id}"), "connect", "POST", "success", None, None,
     );
@@ -745,7 +745,7 @@ async fn disconnect_component(
         .disconnect(&component_id)
         .await
         .map_err(|ref e| diag_error(e))?;
-    state.audit_log.record(
+    state.security.audit_log.record(
         "anonymous", SovdAuditAction::Disconnect,
         &format!("component/{component_id}"), "disconnect", "POST", "success", None, None,
     );
@@ -759,7 +759,7 @@ async fn list_faults(
     Path(component_id): Path<String>,
     axum::extract::Query(params): axum::extract::Query<PaginationParams>,
 ) -> Result<Json<Collection<serde_json::Value>>, (StatusCode, Json<SovdErrorEnvelope>)> {
-    let faults = state.fault_manager.get_faults_for_component(&component_id);
+    let faults = state.diag.fault_manager.get_faults_for_component(&component_id);
     Ok(Json(
         paginate(faults, &params)?.with_context("$metadata#faults"),
     ))
@@ -770,13 +770,14 @@ async fn clear_faults(
     caller: CallerIdentity,
     Path(component_id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<SovdErrorEnvelope>)> {
-    require_unlocked_or_owner(&state.lock_manager, &component_id, &caller.0)?;
+    require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
     // Clear via backend (forwards to CDA or local UDS)
     let _ = state.backend.clear_faults(&component_id).await;
     state
+        .diag
         .fault_manager
         .clear_faults_for_component(&component_id);
-    state.audit_log.record(
+    state.security.audit_log.record(
         &caller.0, SovdAuditAction::ClearFaults,
         &format!("component/{component_id}"), "faults", "DELETE", "success", None, None,
     );
@@ -841,7 +842,7 @@ async fn write_data(
     Path((component_id, data_id)): Path<(String, String)>,
     Json(body): Json<WriteDataRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<SovdErrorEnvelope>)> {
-    require_unlocked_or_owner(&state.lock_manager, &component_id, &caller.0)?;
+    require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
     // Convert typed value to bytes for the backend:
     //   - strings starting with "0x" are treated as hex-encoded raw bytes
     //   - other JSON values are serialized to JSON bytes
@@ -858,7 +859,7 @@ async fn write_data(
         .write_data(&component_id, &data_id, &bytes)
         .await
         .map_err(|ref e| diag_error(e))?;
-    state.audit_log.record(
+    state.security.audit_log.record(
         &caller.0, SovdAuditAction::WriteData,
         &format!("component/{component_id}"), &format!("data/{data_id}"), "PUT", "success", None, None,
     );
@@ -872,7 +873,7 @@ async fn patch_data(
     Path((component_id, data_id)): Path<(String, String)>,
     Json(patch): Json<serde_json::Value>,
 ) -> Result<StatusCode, (StatusCode, Json<SovdErrorEnvelope>)> {
-    require_unlocked_or_owner(&state.lock_manager, &component_id, &caller.0)?;
+    require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
 
     // Read current value
     let current = state
@@ -921,7 +922,7 @@ async fn execute_operation(
     (StatusCode, http::HeaderMap, Json<SovdOperationExecution>),
     (StatusCode, Json<SovdErrorEnvelope>),
 > {
-    require_unlocked_or_owner(&state.lock_manager, &component_id, &caller.0)?;
+    require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
     let params = body
         .params
         .as_deref()
@@ -941,7 +942,7 @@ async fn execute_operation(
         progress: Some(0),
         timestamp: Some(chrono::Utc::now().to_rfc3339()),
     };
-    evict_and_insert(&state.execution_store, exec_id.clone(), exec);
+    evict_and_insert(&state.runtime.execution_store, exec_id.clone(), exec);
 
     // Execute backend operation
     let result = state
@@ -971,6 +972,7 @@ async fn execute_operation(
         },
     };
     state
+        .runtime
         .execution_store
         .insert(exec_id.clone(), final_exec.clone());
 
@@ -985,7 +987,7 @@ async fn execute_operation(
             .map_err(|e| bad_request(&format!("Location header error: {e}")))?,
     );
 
-    state.audit_log.record(
+    state.security.audit_log.record(
         &caller.0, SovdAuditAction::ExecuteOperation,
         &format!("component/{component_id}"), &format!("operations/{op_id}"),
         "POST", "success", Some(&exec_id), None,
@@ -1023,7 +1025,7 @@ async fn io_control(
     Path((component_id, data_id)): Path<(String, String)>,
     Json(body): Json<IoControlRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<SovdErrorEnvelope>)> {
-    require_unlocked_or_owner(&state.lock_manager, &component_id, &caller.0)?;
+    require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
     let option_record = body
         .value
         .as_deref()
@@ -1061,7 +1063,7 @@ async fn communication_control(
     Path(component_id): Path<String>,
     Json(body): Json<CommControlRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<SovdErrorEnvelope>)> {
-    require_unlocked_or_owner(&state.lock_manager, &component_id, &caller.0)?;
+    require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
     let comm_type = u8::from_str_radix(body.communication_type.trim_start_matches("0x"), 16)
         .map_err(|_| bad_request("Invalid communication_type (expected hex byte, e.g. '01')"))?;
 
@@ -1088,7 +1090,7 @@ async fn control_dtc_setting(
     Path(component_id): Path<String>,
     Json(body): Json<DtcSettingRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<SovdErrorEnvelope>)> {
-    require_unlocked_or_owner(&state.lock_manager, &component_id, &caller.0)?;
+    require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
     state
         .backend
         .dtc_setting(&component_id, &body.setting)
@@ -1150,7 +1152,7 @@ async fn write_memory(
     Path(component_id): Path<String>,
     Json(body): Json<WriteMemoryRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<SovdErrorEnvelope>)> {
-    require_unlocked_or_owner(&state.lock_manager, &component_id, &caller.0)?;
+    require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
     let address = u32::from_str_radix(
         body.address
             .trim_start_matches("0x")
@@ -1188,7 +1190,7 @@ async fn start_flash(
     Path(component_id): Path<String>,
     Json(body): Json<FlashRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<SovdErrorEnvelope>)> {
-    require_unlocked_or_owner(&state.lock_manager, &component_id, &caller.0)?;
+    require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
     use base64::Engine;
     let firmware = base64::engine::general_purpose::STANDARD
         .decode(&body.firmware_data)
@@ -1203,7 +1205,7 @@ async fn start_flash(
         .flash(&component_id, &firmware, body.memory_address)
         .await
         .map_err(|ref e| diag_error(e))?;
-    state.audit_log.record(
+    state.security.audit_log.record(
         &caller.0, SovdAuditAction::FlashStart,
         &format!("component/{component_id}"), "flash",
         "POST", "success", None, None,
@@ -1224,7 +1226,7 @@ async fn keepalive_status(State(state): State<AppState>) -> Json<serde_json::Val
 // ── Health ───────────────────────────────────────────────────────────────────
 
 async fn health_check(State(state): State<AppState>) -> Json<serde_json::Value> {
-    let info = state.health.system_info();
+    let info = state.runtime.health.system_info();
     Json(info)
 }
 
@@ -1255,7 +1257,7 @@ async fn readiness_probe(
     );
 
     // Check: audit log is operational
-    let audit_ok = state.audit_log.is_enabled();
+    let audit_ok = state.security.audit_log.is_enabled();
     checks.insert(
         "audit_log".into(),
         serde_json::json!({
@@ -1264,7 +1266,7 @@ async fn readiness_probe(
     );
 
     // Check: health monitor is functional
-    let health_info = state.health.system_info();
+    let health_info = state.runtime.health.system_info();
     let health_ok = health_info.get("status").and_then(|s| s.as_str()) == Some("ok");
     if !health_ok {
         all_ok = false;
@@ -1322,7 +1324,7 @@ async fn list_audit_entries(
         outcome: params.outcome,
         limit: Some(params.limit.unwrap_or(100)),
     };
-    let entries = state.audit_log.query(&filter);
+    let entries = state.security.audit_log.query(&filter);
     Json(Collection::new(entries).with_context("$metadata#audit"))
 }
 
@@ -1365,13 +1367,13 @@ async fn get_fault_by_id(
     Path((component_id, fault_id)): Path<(String, String)>,
 ) -> Result<Json<SovdFault>, (StatusCode, Json<SovdErrorEnvelope>)> {
     // Try FaultManager first
-    if let Some(fault) = state.fault_manager.get_fault(&fault_id) {
+    if let Some(fault) = state.diag.fault_manager.get_fault(&fault_id) {
         if fault.component_id == component_id {
             return Ok(Json(fault));
         }
     }
     // Check component faults
-    let faults = state.fault_manager.get_faults_for_component(&component_id);
+    let faults = state.diag.fault_manager.get_faults_for_component(&component_id);
     faults
         .into_iter()
         .find(|f| f.id == fault_id)
@@ -1406,10 +1408,11 @@ async fn acquire_lock(
         &caller.0
     };
     let lock = state
+        .diag
         .lock_manager
         .acquire(&component_id, owner, body.expires)
         .map_err(|e| conflict(&e))?;
-    state.audit_log.record(
+    state.security.audit_log.record(
         owner, SovdAuditAction::AcquireLock,
         &format!("component/{component_id}"), "lock", "POST", "success", None, None,
     );
@@ -1421,6 +1424,7 @@ async fn get_lock(
     Path(component_id): Path<String>,
 ) -> Result<Json<SovdLock>, (StatusCode, Json<SovdErrorEnvelope>)> {
     state
+        .diag
         .lock_manager
         .get_lock(&component_id)
         .map(Json)
@@ -1433,7 +1437,7 @@ async fn release_lock(
     caller: CallerIdentity,
 ) -> Result<StatusCode, (StatusCode, Json<SovdErrorEnvelope>)> {
     // SOVD §7.4: only lock owner (or anonymous in unauthenticated mode) may release
-    if let Some(lock) = state.lock_manager.get_lock(&component_id) {
+    if let Some(lock) = state.diag.lock_manager.get_lock(&component_id) {
         if !caller.0.is_empty() && lock.locked_by != caller.0 {
             return Err(conflict(&format!(
                 "Lock owned by '{}', cannot release as '{}'",
@@ -1443,8 +1447,8 @@ async fn release_lock(
     } else {
         return Err(not_found(&format!("No lock on component '{component_id}'")));
     }
-    state.lock_manager.release(&component_id);
-    state.audit_log.record(
+    state.diag.lock_manager.release(&component_id);
+    state.security.audit_log.record(
         &caller.0, SovdAuditAction::ReleaseLock,
         &format!("component/{component_id}"), "lock", "DELETE", "success", None, None,
     );
@@ -1556,10 +1560,10 @@ async fn clear_single_fault(
     caller: CallerIdentity,
     Path((component_id, fault_id)): Path<(String, String)>,
 ) -> Result<StatusCode, (StatusCode, Json<SovdErrorEnvelope>)> {
-    require_unlocked_or_owner(&state.lock_manager, &component_id, &caller.0)?;
+    require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
 
     // Validate the fault belongs to this component before clearing
-    match state.fault_manager.get_fault(&fault_id) {
+    match state.diag.fault_manager.get_fault(&fault_id) {
         Some(fault) if fault.component_id != component_id => {
             return Err(not_found(&format!(
                 "Fault '{fault_id}' does not belong to component '{component_id}'"
@@ -1573,7 +1577,7 @@ async fn clear_single_fault(
         _ => {}
     }
 
-    state.fault_manager.clear_fault(&fault_id);
+    state.diag.fault_manager.clear_fault(&fault_id);
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1585,6 +1589,7 @@ async fn list_executions(
     axum::extract::Query(params): axum::extract::Query<PaginationParams>,
 ) -> Result<Json<Collection<serde_json::Value>>, (StatusCode, Json<SovdErrorEnvelope>)> {
     let executions: Vec<SovdOperationExecution> = state
+        .runtime
         .execution_store
         .iter()
         .filter(|e| e.component_id == component_id && e.operation_id == op_id)
@@ -1600,6 +1605,7 @@ async fn get_execution(
     Path((_component_id, _op_id, exec_id)): Path<(String, String, String)>,
 ) -> Result<Json<SovdOperationExecution>, (StatusCode, Json<SovdErrorEnvelope>)> {
     state
+        .runtime
         .execution_store
         .get(&exec_id)
         .map(|e| Json(e.value().clone()))
@@ -1610,7 +1616,7 @@ async fn cancel_execution(
     State(state): State<AppState>,
     Path((_component_id, _op_id, exec_id)): Path<(String, String, String)>,
 ) -> Result<StatusCode, (StatusCode, Json<SovdErrorEnvelope>)> {
-    if let Some(mut entry) = state.execution_store.get_mut(&exec_id) {
+    if let Some(mut entry) = state.runtime.execution_store.get_mut(&exec_id) {
         if entry.status == SovdOperationStatus::Running {
             entry.status = SovdOperationStatus::Cancelled;
             Ok(StatusCode::NO_CONTENT)
@@ -1647,7 +1653,7 @@ async fn proximity_challenge(
         response: None,
     };
     evict_and_insert(
-        &state.proximity_store,
+        &state.runtime.proximity_store,
         challenge.challenge_id.clone(),
         challenge.clone(),
     );
@@ -1659,6 +1665,7 @@ async fn get_proximity_challenge(
     Path((_component_id, challenge_id)): Path<(String, String)>,
 ) -> Result<Json<SovdProximityChallenge>, (StatusCode, Json<SovdErrorEnvelope>)> {
     state
+        .runtime
         .proximity_store
         .get(&challenge_id)
         .map(|e| Json(e.value().clone()))
@@ -1672,7 +1679,7 @@ async fn get_logs(
     Path(component_id): Path<String>,
     axum::extract::Query(params): axum::extract::Query<PaginationParams>,
 ) -> Result<Json<Collection<serde_json::Value>>, (StatusCode, Json<SovdErrorEnvelope>)> {
-    let entries = state.diag_log.get_entries(Some(&component_id));
+    let entries = state.diag.diag_log.get_entries(Some(&component_id));
     Ok(Json(
         paginate(entries, &params)?.with_context("$metadata#logs"),
     ))
@@ -1689,7 +1696,7 @@ async fn subscribe_faults(
     use axum::response::sse::Event;
     use tokio_stream::StreamExt;
 
-    let fault_manager = state.fault_manager.clone();
+    let fault_manager = state.diag.fault_manager.clone();
     let comp_id = component_id.clone();
 
     // Track previous fault IDs to detect changes (SOVD §7.11: event-driven, not polling)
@@ -1754,7 +1761,7 @@ async fn set_mode(
     Path(component_id): Path<String>,
     Json(body): Json<SetModeRequest>,
 ) -> Result<Json<SovdMode>, (StatusCode, Json<SovdErrorEnvelope>)> {
-    require_unlocked_or_owner(&state.lock_manager, &component_id, &caller.0)?;
+    require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
     state
         .backend
         .set_mode(&component_id, &body.mode)
@@ -1765,7 +1772,7 @@ async fn set_mode(
         .backend
         .get_mode(&component_id)
         .map_err(|ref e| diag_error(e))?;
-    state.audit_log.record(
+    state.security.audit_log.record(
         &caller.0, SovdAuditAction::SetMode,
         &format!("component/{component_id}"), &format!("modes/{}", body.mode),
         "POST", "success", None, None,
@@ -1783,7 +1790,7 @@ async fn activate_mode(
     caller: CallerIdentity,
     Path((component_id, mode_id)): Path<(String, String)>,
 ) -> Result<Json<SovdMode>, (StatusCode, Json<SovdErrorEnvelope>)> {
-    require_unlocked_or_owner(&state.lock_manager, &component_id, &caller.0)?;
+    require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
 
     // Map DTC setting modes to backend dtc_setting (Item 7: dtc-setting → modes)
     match mode_id.as_str() {
@@ -1838,13 +1845,13 @@ async fn install_software_package(
     caller: CallerIdentity,
     Path((component_id, package_id)): Path<(String, String)>,
 ) -> Result<(StatusCode, Json<SovdSoftwarePackage>), (StatusCode, Json<SovdErrorEnvelope>)> {
-    require_unlocked_or_owner(&state.lock_manager, &component_id, &caller.0)?;
+    require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
     let pkg = state
         .backend
         .install_software_package(&component_id, &package_id)
         .await
         .map_err(|ref e| diag_error(e))?;
-    state.audit_log.record(
+    state.security.audit_log.record(
         &caller.0, SovdAuditAction::InstallPackage,
         &format!("component/{component_id}"), &format!("software-packages/{package_id}"),
         "POST", "success", None, None,
@@ -1920,7 +1927,7 @@ async fn write_config(
     Path(component_id): Path<String>,
     Json(body): Json<WriteConfigRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<SovdErrorEnvelope>)> {
-    require_unlocked_or_owner(&state.lock_manager, &component_id, &caller.0)?;
+    require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
     let data =
         hex::decode(&body.value).map_err(|e| bad_request(&format!("Invalid hex value: {e}")))?;
 
@@ -1929,7 +1936,7 @@ async fn write_config(
         .write_config(&component_id, &body.name, &data)
         .await
         .map_err(|ref e| diag_error(e))?;
-    state.audit_log.record(
+    state.security.audit_log.record(
         &caller.0, SovdAuditAction::WriteConfig,
         &format!("component/{component_id}"), "configurations", "PUT", "success", None, None,
     );
@@ -2284,20 +2291,27 @@ mod tests {
         use native_core::{AuditLog, ComponentRouter, DiagLog, FaultManager, LockManager};
         use native_health::HealthMonitor;
         use std::sync::Arc;
+        use crate::state::{DiagState, SecurityState, RuntimeState};
 
         let mock: Arc<dyn native_interfaces::ComponentBackend> = Arc::new(MockBackend);
         let router = Arc::new(ComponentRouter::new(vec![mock]));
 
         AppState {
             backend: router,
-            oem_profile: Arc::new(native_interfaces::DefaultProfile),
-            fault_manager: Arc::new(FaultManager::new()),
-            lock_manager: Arc::new(LockManager::new()),
-            diag_log: Arc::new(DiagLog::new()),
-            audit_log: Arc::new(AuditLog::new()),
-            health: Arc::new(HealthMonitor::new()),
-            execution_store: Arc::new(dashmap::DashMap::new()),
-            proximity_store: Arc::new(dashmap::DashMap::new()),
+            diag: DiagState {
+                fault_manager: Arc::new(FaultManager::new()),
+                lock_manager: Arc::new(LockManager::new()),
+                diag_log: Arc::new(DiagLog::new()),
+            },
+            security: SecurityState {
+                oem_profile: Arc::new(native_interfaces::DefaultProfile),
+                audit_log: Arc::new(AuditLog::new()),
+            },
+            runtime: RuntimeState {
+                health: Arc::new(HealthMonitor::new()),
+                execution_store: Arc::new(dashmap::DashMap::new()),
+                proximity_store: Arc::new(dashmap::DashMap::new()),
+            },
         }
     }
 
@@ -3519,18 +3533,25 @@ mod mock_backend_tests {
     }
 
     fn mock_state() -> AppState {
+        use crate::state::{DiagState, SecurityState, RuntimeState};
         let backend: Arc<dyn ComponentBackend> = Arc::new(MockCdaBackend);
         let router = Arc::new(ComponentRouter::new(vec![backend]));
         AppState {
             backend: router,
-            oem_profile: Arc::new(native_interfaces::DefaultProfile),
-            fault_manager: Arc::new(FaultManager::new()),
-            lock_manager: Arc::new(LockManager::new()),
-            diag_log: Arc::new(DiagLog::new()),
-            audit_log: Arc::new(native_core::AuditLog::new()),
-            health: Arc::new(HealthMonitor::new()),
-            execution_store: Arc::new(dashmap::DashMap::new()),
-            proximity_store: Arc::new(dashmap::DashMap::new()),
+            diag: DiagState {
+                fault_manager: Arc::new(FaultManager::new()),
+                lock_manager: Arc::new(LockManager::new()),
+                diag_log: Arc::new(DiagLog::new()),
+            },
+            security: SecurityState {
+                oem_profile: Arc::new(native_interfaces::DefaultProfile),
+                audit_log: Arc::new(native_core::AuditLog::new()),
+            },
+            runtime: RuntimeState {
+                health: Arc::new(HealthMonitor::new()),
+                execution_store: Arc::new(dashmap::DashMap::new()),
+                proximity_store: Arc::new(dashmap::DashMap::new()),
+            },
         }
     }
 
@@ -3662,7 +3683,7 @@ mod mock_backend_tests {
         use native_core::{FaultBridge, FaultSink};
 
         let state = mock_state();
-        let bridge = FaultBridge::new(state.fault_manager.clone());
+        let bridge = FaultBridge::new(state.diag.fault_manager.clone());
         bridge
             .publish(&FaultRecord {
                 fault_id: "DTC_042".into(),
@@ -4000,6 +4021,7 @@ mod mock_backend_tests {
     async fn locked_component_rejects_write_without_client_id() {
         let state = mock_state();
         state
+            .diag
             .lock_manager
             .acquire("mock-ecu", "owner-1", None)
             .unwrap();
@@ -4020,6 +4042,7 @@ mod mock_backend_tests {
     async fn locked_component_allows_write_with_matching_client_id() {
         let state = mock_state();
         state
+            .diag
             .lock_manager
             .acquire("mock-ecu", "owner-1", None)
             .unwrap();
@@ -4060,6 +4083,7 @@ mod mock_backend_tests {
     async fn release_lock_rejects_wrong_caller() {
         let state = mock_state();
         state
+            .diag
             .lock_manager
             .acquire("mock-ecu", "owner-1", None)
             .unwrap();
@@ -4089,6 +4113,7 @@ mod mock_backend_tests {
     async fn release_lock_succeeds_for_owner() {
         let state = mock_state();
         state
+            .diag
             .lock_manager
             .acquire("mock-ecu", "rightful-owner", None)
             .unwrap();
@@ -4240,6 +4265,7 @@ mod mock_backend_tests {
         let state = mock_state();
         let future = (chrono::Utc::now() + chrono::Duration::seconds(120)).to_rfc3339();
         state
+            .diag
             .lock_manager
             .acquire("mock-ecu", "owner-1", Some(future))
             .unwrap();
@@ -4269,6 +4295,7 @@ mod mock_backend_tests {
     async fn lock_conflict_without_expiry_has_no_retry_after() {
         let state = mock_state();
         state
+            .diag
             .lock_manager
             .acquire("mock-ecu", "owner-1", None)
             .unwrap();

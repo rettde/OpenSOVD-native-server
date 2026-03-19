@@ -297,14 +297,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let state = AppState {
         backend: router,
-        oem_profile,
-        fault_manager,
-        lock_manager,
-        diag_log,
-        audit_log: audit_log.clone(),
-        health,
-        execution_store: Arc::new(DashMap::new()),
-        proximity_store: Arc::new(DashMap::new()),
+        diag: native_sovd::DiagState {
+            fault_manager,
+            lock_manager,
+            diag_log,
+        },
+        security: native_sovd::SecurityState {
+            oem_profile,
+            audit_log: audit_log.clone(),
+        },
+        runtime: native_sovd::RuntimeState {
+            health,
+            execution_store: Arc::new(DashMap::new()),
+            proximity_store: Arc::new(DashMap::new()),
+        },
     };
     let app = build_router(state, config.auth);
 
