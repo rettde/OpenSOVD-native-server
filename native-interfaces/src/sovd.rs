@@ -216,6 +216,118 @@ pub struct SovdErrorDetail {
     pub target: Option<String>,
 }
 
+// ── Error Code Catalog (SOVD §5.4 + ISO 17978-3) ─────────────────────────
+
+/// Typed SOVD error codes for machine-readable error classification.
+///
+/// Each variant maps to an HTTP status, a stable string code (e.g. `"SOVD-ERR-404"`),
+/// and a default description. Handlers may override the description with context-
+/// specific messages while preserving the code for monitoring and automation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SovdErrorCode {
+    /// 400 — Malformed request, missing/invalid parameters
+    BadRequest,
+    /// 401 — Missing or invalid authentication credentials
+    Unauthorized,
+    /// 403 — Authenticated but insufficient permissions
+    Forbidden,
+    /// 404 — Resource not found
+    NotFound,
+    /// 409 — Conflicting state (e.g. lock held by another client)
+    Conflict,
+    /// 422 — Request is well-formed but semantically invalid
+    UnprocessableEntity,
+    /// 429 — Too many requests (rate-limited)
+    TooManyRequests,
+    /// 500 — Internal server error
+    InternalError,
+    /// 501 — Operation not implemented by backend
+    NotImplemented,
+    /// 502 — ECU offline or CDA unreachable
+    BadGateway,
+    /// 503 — Server not ready (readiness probe fail)
+    ServiceUnavailable,
+    /// 504 — Backend or ECU response timeout
+    GatewayTimeout,
+}
+
+impl SovdErrorCode {
+    /// Stable string code for serialization and monitoring.
+    #[must_use]
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::BadRequest => "SOVD-ERR-400",
+            Self::Unauthorized => "SOVD-ERR-401",
+            Self::Forbidden => "SOVD-ERR-403",
+            Self::NotFound => "SOVD-ERR-404",
+            Self::Conflict => "SOVD-ERR-409",
+            Self::UnprocessableEntity => "SOVD-ERR-422",
+            Self::TooManyRequests => "SOVD-ERR-429",
+            Self::InternalError => "SOVD-ERR-500",
+            Self::NotImplemented => "SOVD-ERR-501",
+            Self::BadGateway => "SOVD-ERR-502",
+            Self::ServiceUnavailable => "SOVD-ERR-503",
+            Self::GatewayTimeout => "SOVD-ERR-504",
+        }
+    }
+
+    /// Default human-readable description.
+    #[must_use]
+    pub fn default_message(&self) -> &'static str {
+        match self {
+            Self::BadRequest => "The request is malformed or contains invalid parameters",
+            Self::Unauthorized => "Authentication credentials are missing or invalid",
+            Self::Forbidden => "Insufficient permissions for this operation",
+            Self::NotFound => "The requested resource was not found",
+            Self::Conflict => "The request conflicts with the current resource state",
+            Self::UnprocessableEntity => "The request is well-formed but semantically invalid",
+            Self::TooManyRequests => "Too many requests — retry after backoff",
+            Self::InternalError => "An internal server error occurred",
+            Self::NotImplemented => "This operation is not implemented by the backend",
+            Self::BadGateway => "The upstream ECU or CDA is unreachable",
+            Self::ServiceUnavailable => "The server is not ready to handle requests",
+            Self::GatewayTimeout => "The upstream ECU or CDA did not respond in time",
+        }
+    }
+
+    /// Corresponding HTTP status code.
+    #[must_use]
+    pub fn http_status(&self) -> u16 {
+        match self {
+            Self::BadRequest => 400,
+            Self::Unauthorized => 401,
+            Self::Forbidden => 403,
+            Self::NotFound => 404,
+            Self::Conflict => 409,
+            Self::UnprocessableEntity => 422,
+            Self::TooManyRequests => 429,
+            Self::InternalError => 500,
+            Self::NotImplemented => 501,
+            Self::BadGateway => 502,
+            Self::ServiceUnavailable => 503,
+            Self::GatewayTimeout => 504,
+        }
+    }
+
+    /// Convenience: build a `SovdErrorEnvelope` from this code with a custom message.
+    #[must_use]
+    pub fn envelope(&self, message: impl Into<String>) -> SovdErrorEnvelope {
+        SovdErrorEnvelope::new(self.code(), message)
+    }
+
+    /// Convenience: build a `SovdErrorEnvelope` with the default message.
+    #[must_use]
+    pub fn default_envelope(&self) -> SovdErrorEnvelope {
+        SovdErrorEnvelope::new(self.code(), self.default_message())
+    }
+}
+
+impl std::fmt::Display for SovdErrorCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.code())
+    }
+}
+
 // ── Locking (SOVD Standard §7.4) ─────────────────────────────────────────
 
 /// SOVD resource lock

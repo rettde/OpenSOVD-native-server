@@ -1945,16 +1945,19 @@ async fn write_config(
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-fn sovd_error(status: StatusCode, code: &str, msg: &str) -> (StatusCode, Json<SovdErrorEnvelope>) {
-    (status, Json(SovdErrorEnvelope::new(code, msg)))
+fn sovd_error(ec: SovdErrorCode, msg: &str) -> (StatusCode, Json<SovdErrorEnvelope>) {
+    (
+        StatusCode::from_u16(ec.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        Json(ec.envelope(msg)),
+    )
 }
 
 fn not_found(msg: &str) -> (StatusCode, Json<SovdErrorEnvelope>) {
-    sovd_error(StatusCode::NOT_FOUND, "SOVD-ERR-404", msg)
+    sovd_error(SovdErrorCode::NotFound, msg)
 }
 
 fn bad_request(msg: &str) -> (StatusCode, Json<SovdErrorEnvelope>) {
-    sovd_error(StatusCode::BAD_REQUEST, "SOVD-ERR-400", msg)
+    sovd_error(SovdErrorCode::BadRequest, msg)
 }
 
 /// Check lock enforcement for mutating operations (SOVD §7.4).
@@ -1989,7 +1992,7 @@ fn require_unlocked_or_owner(
 }
 
 fn conflict(msg: &str) -> (StatusCode, Json<SovdErrorEnvelope>) {
-    sovd_error(StatusCode::CONFLICT, "SOVD-ERR-409", msg)
+    sovd_error(SovdErrorCode::Conflict, msg)
 }
 
 /// Return a 409 Conflict with an optional Retry-After hint (SOVD §7.4).
@@ -2010,7 +2013,7 @@ fn conflict_with_retry(
         StatusCode::CONFLICT,
         Json(SovdErrorEnvelope {
             error: SovdErrorResponse {
-                code: "SOVD-ERR-409".into(),
+                code: SovdErrorCode::Conflict.code().into(),
                 message: msg.to_owned(),
                 target: None,
                 details,
@@ -2023,24 +2026,24 @@ fn conflict_with_retry(
 /// Map DiagServiceError to the semantically correct HTTP status code
 fn diag_error(e: &native_interfaces::DiagServiceError) -> (StatusCode, Json<SovdErrorEnvelope>) {
     use native_interfaces::DiagServiceError::*;
-    let (status, code) = match e {
-        NotFound(_) => (StatusCode::NOT_FOUND, "SOVD-ERR-404"),
+    let ec = match e {
+        NotFound(_) => SovdErrorCode::NotFound,
         InvalidRequest(_) | BadPayload(_) | InvalidParameter { .. } | NotEnoughData { .. } => {
-            (StatusCode::BAD_REQUEST, "SOVD-ERR-400")
+            SovdErrorCode::BadRequest
         }
-        RequestNotSupported(_) => (StatusCode::NOT_IMPLEMENTED, "SOVD-ERR-501"),
-        AccessDenied(_) => (StatusCode::FORBIDDEN, "SOVD-ERR-403"),
-        Timeout => (StatusCode::GATEWAY_TIMEOUT, "SOVD-ERR-504"),
+        RequestNotSupported(_) => SovdErrorCode::NotImplemented,
+        AccessDenied(_) => SovdErrorCode::Forbidden,
+        Timeout => SovdErrorCode::GatewayTimeout,
         EcuOffline(_) | ConnectionClosed(_) | NoResponse(_) | SendFailed(_) => {
-            (StatusCode::BAD_GATEWAY, "SOVD-ERR-502")
+            SovdErrorCode::BadGateway
         }
         InvalidState(_)
         | InvalidAddress(_)
         | Nack(_)
         | UnexpectedResponse(_)
-        | ResourceError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "SOVD-ERR-500"),
+        | ResourceError(_) => SovdErrorCode::InternalError,
     };
-    sovd_error(status, code, &e.to_string())
+    sovd_error(ec, &e.to_string())
 }
 
 #[cfg(test)]
