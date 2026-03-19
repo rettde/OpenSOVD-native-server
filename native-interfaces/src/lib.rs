@@ -9,6 +9,7 @@
 
 pub mod backend;
 pub mod bridge;
+pub mod data_catalog;
 pub mod diag;
 pub mod error;
 pub mod oem;
@@ -28,4 +29,5 @@ pub use error::{ConnectionError, DiagServiceError, DoipGatewaySetupError, SomeIp
 pub use oem::{DefaultProfile, OemProfile};
 pub use secrets::{EnvSecretProvider, SecretProvider, StaticSecretProvider};
 pub use storage::{InMemoryStorage, StorageBackend};
+pub use data_catalog::{DataCatalogProvider, DataSemantics, NormalRange, StaticDataCatalogProvider};
 pub use tenant::{MultiTenantConfig, TenantContext, TenantIsolation};

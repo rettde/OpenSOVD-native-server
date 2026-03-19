@@ -20,6 +20,7 @@ use native_health::HealthMonitor;
 use native_interfaces::oem::OemProfile;
 use native_interfaces::sovd::SovdSoftwarePackage;
 use native_interfaces::sovd::{SovdOperationExecution, SovdProximityChallenge};
+use native_interfaces::data_catalog::DataCatalogProvider;
 use native_interfaces::{ComponentBackend, EntityBackend, ExtendedDiagBackend};
 
 // ── Sub-state: Diagnostics ──────────────────────────────────────────────────
@@ -84,4 +85,6 @@ pub struct AppState {
     pub security: SecurityState,
     /// Runtime state: health, execution tracking, proximity challenges
     pub runtime: RuntimeState,
+    /// Semantic data catalog provider (Wave 4, A4.2)
+    pub data_catalog: Arc<dyn DataCatalogProvider>,
 }

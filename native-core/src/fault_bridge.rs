@@ -143,6 +143,9 @@ impl FaultBridge {
             name: format!("Fault {}", record.fault_id),
             description: record.description.clone(),
             scope: Some("component".to_owned()),
+            affected_subsystem: None,
+            correlated_signals: vec![],
+            classification_tags: vec![],
         }
     }
 }

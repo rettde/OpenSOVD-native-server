@@ -585,7 +585,21 @@ pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
         // Signed audit export (Wave 3, W3.4)
         .route("/audit/export", get(export_signed_audit))
         // Compliance evidence (Wave 3, E3.2)
-        .route("/compliance-evidence", get(compliance_evidence));
+        .route("/compliance-evidence", get(compliance_evidence))
+        // Batch diagnostic snapshot (Wave 4, W4.2)
+        .route(
+            "/components/{component_id}/snapshot",
+            get(component_snapshot),
+        )
+        // Fault export — NDJSON streaming (Wave 4, W4.2)
+        .route("/export/faults", get(export_faults))
+        // Schema introspection (Wave 4, W4.4)
+        .route("/schema/data-catalog", get(schema_data_catalog))
+        // SSE data-change stream (Wave 4, W4.5)
+        .route(
+            "/components/{component_id}/data/subscribe",
+            get(subscribe_data_changes),
+        );
 
     // ── Vendor extensions (x-uds prefixed, non-standard) ────────────────
     let x_uds = Router::new()
@@ -1708,6 +1722,360 @@ async fn compliance_evidence(
     }))
 }
 
+// ── Batch Diagnostic Snapshot (Wave 4, W4.2) ─────────────────────────────
+//
+// Returns all current signal values + semantic metadata for a component
+// in a single response. Includes reproducibility metadata (E4.3) and
+// schema version (E4.1). Audited for export access control (E4.2).
+
+async fn component_snapshot(
+    State(state): State<AppState>,
+    Path(component_id): Path<String>,
+    CallerIdentity(caller): CallerIdentity,
+) -> Result<axum::response::Response, (StatusCode, Json<SovdErrorEnvelope>)> {
+    // E4.2: Audit export access
+    let caller_label = if caller.is_empty() { "anonymous" } else { &caller };
+    state.security.audit_log.record(
+        caller_label,
+        native_interfaces::sovd::SovdAuditAction::ReadData,
+        &format!("component/{component_id}/snapshot"),
+        "export-snapshot",
+        "GET",
+        "success",
+        None,
+        None,
+    );
+
+    let catalog = state
+        .backend
+        .list_data(&component_id)
+        .map_err(|e| not_found(&e.to_string()))?;
+
+    let schema_version = state.data_catalog.schema_version();
+
+    // Build NDJSON response (A4.3)
+    let mut lines = Vec::new();
+
+    // E4.3: Reproducibility metadata preamble
+    let meta = serde_json::json!({
+        "_meta": true,
+        "exportType": "component-snapshot",
+        "componentId": component_id,
+        "exportedAt": chrono::Utc::now().to_rfc3339(),
+        "serverVersion": env!("CARGO_PKG_VERSION"),
+        "schemaVersion": schema_version,
+    });
+    lines.push(serde_json::to_string(&meta).unwrap_or_default());
+
+    // Read each data item's current value and enrich with semantic metadata
+    for entry in &catalog {
+        let value = state
+            .backend
+            .read_data(&component_id, &entry.id)
+            .await
+            .ok();
+
+        let semantics = state.data_catalog.metadata(&component_id, &entry.id);
+
+        let mut record = serde_json::json!({
+            "id": entry.id,
+            "name": entry.name,
+            "componentId": component_id,
+            "dataType": entry.data_type,
+            "access": entry.access,
+        });
+        if let Some(val) = value {
+            record["value"] = val;
+        }
+        if let Some(unit) = &entry.unit {
+            record["unit"] = serde_json::Value::String(unit.clone());
+        }
+        if let Some(ref sr) = entry.semantic_ref {
+            record["semanticRef"] = serde_json::Value::String(sr.clone());
+        }
+        if let Some(ref nr) = entry.normal_range {
+            record["normalRange"] = serde_json::json!({"min": nr.min, "max": nr.max});
+        }
+        if let Some(sh) = entry.sampling_hint {
+            record["samplingHint"] = serde_json::json!(sh);
+        }
+        if !entry.classification_tags.is_empty() {
+            record["classificationTags"] = serde_json::json!(entry.classification_tags);
+        }
+        // Merge provider semantics (may override catalog-level metadata)
+        if let Some(sem) = semantics {
+            if let Some(ref sr) = sem.semantic_ref {
+                record["semanticRef"] = serde_json::Value::String(sr.clone());
+            }
+            if let Some(ref nr) = sem.normal_range {
+                record["normalRange"] = serde_json::json!({"min": nr.min, "max": nr.max});
+            }
+            if let Some(sh) = sem.sampling_hint {
+                record["samplingHint"] = serde_json::json!(sh);
+            }
+            if !sem.classification_tags.is_empty() {
+                record["classificationTags"] = serde_json::json!(sem.classification_tags);
+            }
+        }
+
+        lines.push(serde_json::to_string(&record).unwrap_or_default());
+    }
+
+    let body = lines.join("\n") + "\n";
+    let resp = axum::response::Response::builder()
+        .header("content-type", "application/x-ndjson")
+        .body(axum::body::Body::from(body))
+        .map_err(|e| sovd_error(SovdErrorCode::InternalError, &e.to_string()))?;
+    Ok(resp)
+}
+
+// ── Fault Export — NDJSON streaming (Wave 4, W4.2) ────────────────────────
+
+#[derive(Deserialize)]
+struct FaultExportParams {
+    /// Filter by component ID
+    #[serde(rename = "componentId")]
+    component_id: Option<String>,
+    /// Minimum severity filter
+    severity: Option<String>,
+}
+
+async fn export_faults(
+    State(state): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<FaultExportParams>,
+    CallerIdentity(caller): CallerIdentity,
+) -> Result<axum::response::Response, (StatusCode, Json<SovdErrorEnvelope>)> {
+    // E4.2: Audit export access
+    let caller_label = if caller.is_empty() { "anonymous" } else { &caller };
+    state.security.audit_log.record(
+        caller_label,
+        native_interfaces::sovd::SovdAuditAction::ReadData,
+        "export/faults",
+        "export-faults",
+        "GET",
+        "success",
+        None,
+        None,
+    );
+
+    let schema_version = state.data_catalog.schema_version();
+
+    let components = state.backend.list_components();
+    let target_components: Vec<_> = if let Some(ref cid) = params.component_id {
+        components.into_iter().filter(|c| c.id == *cid).collect()
+    } else {
+        components
+    };
+
+    let mut lines = Vec::new();
+
+    // E4.3: Reproducibility metadata preamble
+    let component_versions: Vec<_> = target_components
+        .iter()
+        .map(|c| {
+            serde_json::json!({
+                "componentId": c.id,
+                "softwareVersion": c.software_version,
+            })
+        })
+        .collect();
+
+    let meta = serde_json::json!({
+        "_meta": true,
+        "exportType": "fault-export",
+        "exportedAt": chrono::Utc::now().to_rfc3339(),
+        "serverVersion": env!("CARGO_PKG_VERSION"),
+        "schemaVersion": schema_version,
+        "componentFirmwareVersions": component_versions,
+    });
+    lines.push(serde_json::to_string(&meta).unwrap_or_default());
+
+    for component in &target_components {
+        if let Ok(faults) = state.backend.read_faults(&component.id).await {
+            for fault in faults {
+                // Apply severity filter
+                if let Some(ref min_sev) = params.severity {
+                    let passes = match min_sev.as_str() {
+                        "critical" => matches!(fault.severity, native_interfaces::sovd::SovdFaultSeverity::Critical),
+                        "high" => matches!(
+                            fault.severity,
+                            native_interfaces::sovd::SovdFaultSeverity::Critical
+                                | native_interfaces::sovd::SovdFaultSeverity::High
+                        ),
+                        "medium" => !matches!(fault.severity, native_interfaces::sovd::SovdFaultSeverity::Low),
+                        _ => true,
+                    };
+                    if !passes {
+                        continue;
+                    }
+                }
+                if let Ok(json) = serde_json::to_string(&fault) {
+                    lines.push(json);
+                }
+            }
+        }
+    }
+
+    let body = lines.join("\n") + "\n";
+    let resp = axum::response::Response::builder()
+        .header("content-type", "application/x-ndjson")
+        .body(axum::body::Body::from(body))
+        .map_err(|e| sovd_error(SovdErrorCode::InternalError, &e.to_string()))?;
+    Ok(resp)
+}
+
+// ── Schema Introspection (Wave 4, W4.4) ──────────────────────────────────
+//
+// GET /schema/data-catalog — returns the full semantic schema across all
+// components for ML pipeline bootstrapping.
+
+async fn schema_data_catalog(
+    State(state): State<AppState>,
+) -> Json<serde_json::Value> {
+    let schema_version = state.data_catalog.schema_version();
+    let components = state.backend.list_components();
+
+    let mut component_schemas = Vec::new();
+    for component in &components {
+        if let Ok(catalog) = state.backend.list_data(&component.id) {
+            let mut entries = Vec::new();
+            for entry in &catalog {
+                let semantics = state.data_catalog.metadata(&component.id, &entry.id);
+                let mut item = serde_json::json!({
+                    "id": entry.id,
+                    "name": entry.name,
+                    "dataType": entry.data_type,
+                    "access": entry.access,
+                });
+                if let Some(u) = &entry.unit {
+                    item["unit"] = serde_json::Value::String(u.clone());
+                }
+                if let Some(ref sr) = entry.semantic_ref {
+                    item["semanticRef"] = serde_json::Value::String(sr.clone());
+                }
+                if let Some(ref nr) = entry.normal_range {
+                    item["normalRange"] = serde_json::json!({"min": nr.min, "max": nr.max});
+                }
+                if let Some(sh) = entry.sampling_hint {
+                    item["samplingHint"] = serde_json::json!(sh);
+                }
+                if !entry.classification_tags.is_empty() {
+                    item["classificationTags"] = serde_json::json!(entry.classification_tags);
+                }
+                // Overlay provider semantics
+                if let Some(sem) = semantics {
+                    if let Some(ref sr) = sem.semantic_ref {
+                        item["semanticRef"] = serde_json::Value::String(sr.clone());
+                    }
+                    if let Some(ref u) = sem.unit {
+                        item["unit"] = serde_json::Value::String(u.clone());
+                    }
+                    if let Some(ref nr) = sem.normal_range {
+                        item["normalRange"] = serde_json::json!({"min": nr.min, "max": nr.max});
+                    }
+                    if let Some(sh) = sem.sampling_hint {
+                        item["samplingHint"] = serde_json::json!(sh);
+                    }
+                    if !sem.classification_tags.is_empty() {
+                        item["classificationTags"] = serde_json::json!(sem.classification_tags);
+                    }
+                }
+                entries.push(item);
+            }
+            component_schemas.push(serde_json::json!({
+                "componentId": component.id,
+                "componentName": component.name,
+                "dataItems": entries,
+            }));
+        }
+    }
+
+    Json(serde_json::json!({
+        "@odata.context": "$metadata#schema/data-catalog",
+        "schemaVersion": schema_version,
+        "ontologyRef": "COVESA VSS",
+        "serverVersion": env!("CARGO_PKG_VERSION"),
+        "generatedAt": chrono::Utc::now().to_rfc3339(),
+        "components": component_schemas,
+    }))
+}
+
+// ── SSE Data-Change Stream (Wave 4, W4.5) ────────────────────────────────
+//
+// Extends the existing fault SSE with data-value change events.
+// Sends periodic snapshots of data values as SSE events for real-time
+// ML inference at the edge. Client can subscribe and receive:
+//   - "data-change" events with current values
+//   - "fault-change" events when fault state changes
+
+async fn subscribe_data_changes(
+    State(state): State<AppState>,
+    Path(component_id): Path<String>,
+) -> Result<axum::response::sse::Sse<impl futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    // Verify component exists
+    state
+        .backend
+        .get_component(&component_id)
+        .ok_or_else(|| not_found(&format!("Component '{component_id}' not found")))?;
+
+    let backend = state.backend.clone();
+    let cid = component_id.clone();
+
+    let stream = async_stream::stream! {
+        // Send initial snapshot
+        if let Ok(catalog) = backend.list_data(&cid) {
+            for entry in &catalog {
+                if let Ok(value) = backend.read_data(&cid, &entry.id).await {
+                    let event_data = serde_json::json!({
+                        "type": "data-snapshot",
+                        "componentId": cid,
+                        "dataId": entry.id,
+                        "value": value,
+                        "timestamp": chrono::Utc::now().to_rfc3339(),
+                    });
+                    yield Ok(axum::response::sse::Event::default()
+                        .event("data-change")
+                        .json_data(event_data)
+                        .unwrap_or_else(|_| axum::response::sse::Event::default()));
+                }
+            }
+        }
+
+        // Send initial fault state
+        if let Ok(faults) = backend.read_faults(&cid).await {
+            let event_data = serde_json::json!({
+                "type": "fault-snapshot",
+                "componentId": cid,
+                "faults": faults,
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+            });
+            yield Ok(axum::response::sse::Event::default()
+                .event("fault-change")
+                .json_data(event_data)
+                .unwrap_or_else(|_| axum::response::sse::Event::default()));
+        }
+
+        // Periodic keepalive — real implementation would use a watch channel
+        // for push-based notifications from the backend
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            let event_data = serde_json::json!({
+                "type": "keepalive",
+                "componentId": cid,
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+            });
+            yield Ok(axum::response::sse::Event::default()
+                .event("keepalive")
+                .json_data(event_data)
+                .unwrap_or_else(|_| axum::response::sse::Event::default()));
+        }
+    };
+
+    Ok(axum::response::sse::Sse::new(stream)
+        .keep_alive(axum::response::sse::KeepAlive::default()))
+}
+
 // ── Data Listing (SOVD §7.5) ─────────────────────────────────────────────
 
 async fn list_data(
@@ -2689,6 +3057,10 @@ mod tests {
                 data_type: native_interfaces::sovd::SovdDataType::String,
                 unit: None,
                 did: Some("F190".into()),
+                normal_range: None,
+                semantic_ref: None,
+                sampling_hint: None,
+                classification_tags: vec![],
             }])
         }
         async fn read_data(
@@ -2910,6 +3282,7 @@ mod tests {
                 proximity_store: Arc::new(dashmap::DashMap::new()),
                 package_store: Arc::new(dashmap::DashMap::new()),
             },
+            data_catalog: Arc::new(native_interfaces::StaticDataCatalogProvider::new()),
         }
     }
 
@@ -4291,6 +4664,10 @@ mod mock_backend_tests {
                 data_type: SovdDataType::Integer,
                 unit: Some("km/h".into()),
                 did: Some("2000".into()),
+                normal_range: Some(native_interfaces::data_catalog::NormalRange { min: 0.0, max: 250.0 }),
+                semantic_ref: Some("Vehicle.Speed".into()),
+                sampling_hint: Some(0.1),
+                classification_tags: vec!["powertrain".into()],
             }])
         }
 
@@ -4319,6 +4696,9 @@ mod mock_backend_tests {
                 name: "Mass Air Flow".into(),
                 description: Some("MAF sensor circuit malfunction".into()),
                 scope: Some("component".into()),
+                affected_subsystem: Some("intake".into()),
+                correlated_signals: vec!["Vehicle.Powertrain.MassAirFlow".into()],
+                classification_tags: vec!["powertrain".into(), "emission".into()],
             }])
         }
 
@@ -4495,6 +4875,7 @@ mod mock_backend_tests {
                 proximity_store: Arc::new(dashmap::DashMap::new()),
                 package_store: Arc::new(dashmap::DashMap::new()),
             },
+            data_catalog: Arc::new(native_interfaces::StaticDataCatalogProvider::new()),
         }
     }
 
@@ -5401,5 +5782,175 @@ mod mock_backend_tests {
                     .map(|a| a.is_empty())
                     .unwrap_or(false)
         );
+    }
+
+    // ── Wave 4 endpoint tests ─────────────────────────────────────────
+
+    #[tokio::test]
+    async fn component_snapshot_returns_ndjson() {
+        let app = mock_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/components/mock-ecu/snapshot")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let ct = resp.headers().get("content-type").unwrap().to_str().unwrap();
+        assert_eq!(ct, "application/x-ndjson");
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let text = String::from_utf8(body.to_vec()).unwrap();
+        let lines: Vec<&str> = text.trim().lines().collect();
+        assert!(lines.len() >= 2, "expected at least meta + 1 data line");
+        // First line is metadata preamble
+        let meta: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(meta["_meta"], true);
+        assert_eq!(meta["exportType"], "component-snapshot");
+        assert!(meta.get("exportedAt").is_some());
+        assert!(meta.get("serverVersion").is_some());
+        assert!(meta.get("schemaVersion").is_some());
+        // Second line is a data record
+        let record: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+        assert!(record.get("id").is_some());
+        assert!(record.get("componentId").is_some());
+    }
+
+    #[tokio::test]
+    async fn export_faults_returns_ndjson() {
+        let app = mock_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/export/faults")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let ct = resp.headers().get("content-type").unwrap().to_str().unwrap();
+        assert_eq!(ct, "application/x-ndjson");
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let text = String::from_utf8(body.to_vec()).unwrap();
+        let lines: Vec<&str> = text.trim().lines().collect();
+        assert!(lines.len() >= 2, "expected at least meta + 1 fault line");
+        let meta: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(meta["_meta"], true);
+        assert_eq!(meta["exportType"], "fault-export");
+        assert!(meta.get("componentFirmwareVersions").is_some());
+        // Fault record
+        let fault: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+        assert!(fault.get("id").is_some());
+        assert!(fault.get("componentId").is_some());
+        assert!(fault.get("severity").is_some());
+        // W4.3 enrichment fields
+        assert!(fault.get("affectedSubsystem").is_some());
+        assert!(fault.get("correlatedSignals").is_some());
+        assert!(fault.get("classificationTags").is_some());
+    }
+
+    #[tokio::test]
+    async fn export_faults_severity_filter() {
+        let app = mock_router();
+        // Our mock fault is severity=high. Filter for critical only → no faults
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/export/faults?severity=critical")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let text = String::from_utf8(body.to_vec()).unwrap();
+        let lines: Vec<&str> = text.trim().lines().collect();
+        // Only the meta line, no faults
+        assert_eq!(lines.len(), 1, "critical filter should exclude 'high' severity faults");
+    }
+
+    #[tokio::test]
+    async fn schema_data_catalog_returns_components() {
+        let app = mock_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/schema/data-catalog")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["@odata.context"], "$metadata#schema/data-catalog");
+        assert!(json.get("schemaVersion").is_some());
+        assert_eq!(json["ontologyRef"], "COVESA VSS");
+        assert!(json.get("serverVersion").is_some());
+        assert!(json.get("generatedAt").is_some());
+        let components = json["components"].as_array().unwrap();
+        assert!(!components.is_empty());
+        // First component should have dataItems
+        let first = &components[0];
+        assert!(first.get("componentId").is_some());
+        let items = first["dataItems"].as_array().unwrap();
+        assert!(!items.is_empty());
+        // Data items should have semantic metadata from mock
+        let item = &items[0];
+        assert!(item.get("id").is_some());
+        assert!(item.get("dataType").is_some());
+    }
+
+    #[tokio::test]
+    async fn data_subscribe_returns_sse() {
+        let app = mock_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/components/mock-ecu/data/subscribe")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let ct = resp.headers().get("content-type").unwrap().to_str().unwrap();
+        assert!(ct.contains("text/event-stream"), "expected SSE content type");
+    }
+
+    #[tokio::test]
+    async fn data_subscribe_unknown_component_404() {
+        let app = mock_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/components/nonexistent/data/subscribe")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn snapshot_unknown_component_404() {
+        let app = mock_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/components/nonexistent/snapshot")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 }

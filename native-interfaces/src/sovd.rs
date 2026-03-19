@@ -83,6 +83,15 @@ pub struct SovdFault {
     /// Fault scope (MBDS §7.1): e.g. "component", "system", "network"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
+    /// Affected subsystem for ML fault correlation (Wave 4, W4.3)
+    #[serde(skip_serializing_if = "Option::is_none", rename = "affectedSubsystem")]
+    pub affected_subsystem: Option<String>,
+    /// VSS paths of signals correlated with this fault (Wave 4, W4.3)
+    #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "correlatedSignals")]
+    pub correlated_signals: Vec<String>,
+    /// ML classification tags for feature engineering (Wave 4, W4.3)
+    #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "classificationTags")]
+    pub classification_tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -375,6 +384,9 @@ pub struct SovdCapabilities {
 // ── Data Catalog (SOVD Standard §7.5) ────────────────────────────────────
 
 /// SOVD data catalog entry — metadata about a single DID (SOVD §7.5)
+///
+/// Wave 4 (W4.1) extends this with semantic metadata for ML pipeline consumption:
+/// `normalRange`, `semanticRef`, `samplingHint`, `classificationTags`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SovdDataCatalogEntry {
     pub id: String,
@@ -389,6 +401,18 @@ pub struct SovdDataCatalogEntry {
     /// Raw UDS DID (hex) — vendor extension
     #[serde(skip_serializing_if = "Option::is_none", rename = "x-uds-did")]
     pub did: Option<String>,
+    /// Normal operating range `[min, max]` for anomaly detection (Wave 4, W4.1)
+    #[serde(skip_serializing_if = "Option::is_none", rename = "normalRange")]
+    pub normal_range: Option<crate::data_catalog::NormalRange>,
+    /// COVESA VSS path or `x-vendor.*` semantic reference (Wave 4, W4.1 / A4.1)
+    #[serde(skip_serializing_if = "Option::is_none", rename = "semanticRef")]
+    pub semantic_ref: Option<String>,
+    /// Recommended sampling interval in seconds (Wave 4, W4.1)
+    #[serde(skip_serializing_if = "Option::is_none", rename = "samplingHint")]
+    pub sampling_hint: Option<f64>,
+    /// ML classification tags (e.g. "powertrain", "safety") (Wave 4, W4.1)
+    #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "classificationTags")]
+    pub classification_tags: Vec<String>,
 }
 
 // ── Groups (SOVD Standard §7.2) ──────────────────────────────────────────
@@ -811,6 +835,9 @@ mod tests {
             name: "Sensor fault".into(),
             description: None,
             scope: None,
+            affected_subsystem: None,
+            correlated_signals: vec![],
+            classification_tags: vec![],
         };
         let json = serde_json::to_string(&fault).unwrap();
         let deser: SovdFault = serde_json::from_str(&json).unwrap();
@@ -830,6 +857,9 @@ mod tests {
             name: "Sensor fault".into(),
             description: None,
             scope: None,
+            affected_subsystem: None,
+            correlated_signals: vec![],
+            classification_tags: vec![],
         };
         let json = serde_json::to_value(&fault).unwrap();
         // Must be "displayCode" (camelCase), NOT "display_code" (snake_case)
@@ -852,6 +882,9 @@ mod tests {
             name: "Minor fault".into(),
             description: None,
             scope: None,
+            affected_subsystem: None,
+            correlated_signals: vec![],
+            classification_tags: vec![],
         };
         let json = serde_json::to_value(&fault).unwrap();
         assert!(
@@ -996,6 +1029,10 @@ mod tests {
             data_type: SovdDataType::String,
             unit: None,
             did: Some("0xF190".into()),
+            normal_range: None,
+            semantic_ref: Some("Vehicle.Chassis.VIN".into()),
+            sampling_hint: None,
+            classification_tags: vec![],
         };
         let json = serde_json::to_string(&entry).unwrap();
         assert!(json.contains("\"dataType\""));
@@ -1212,5 +1249,145 @@ mod tests {
         assert!(json.get("result").is_none());
         assert!(json.get("progress").is_none());
         assert!(json.get("timestamp").is_none());
+    }
+
+    // ── T4.1: Schema Stability Regression Tests ──────────────────────────
+    //
+    // These tests verify that the JSON shapes of SovdDataCatalogEntry and
+    // SovdFault haven't changed without a schema version bump. If a field
+    // is added/removed/renamed, these tests will fail, signaling that
+    // downstream ML pipelines may break.
+
+    #[test]
+    fn t4_1_data_catalog_entry_schema_stability() {
+        let entry = SovdDataCatalogEntry {
+            id: "test".into(),
+            name: "Test Data".into(),
+            description: Some("A test data item".into()),
+            access: SovdDataAccess::ReadOnly,
+            data_type: SovdDataType::Float,
+            unit: Some("V".into()),
+            did: Some("0xF190".into()),
+            normal_range: Some(crate::data_catalog::NormalRange { min: 0.0, max: 16.0 }),
+            semantic_ref: Some("Vehicle.Powertrain.Battery.Voltage".into()),
+            sampling_hint: Some(1.0),
+            classification_tags: vec!["powertrain".into()],
+        };
+        let json = serde_json::to_value(&entry).unwrap();
+
+        // Required fields — MUST always be present
+        assert!(json.get("id").is_some(), "schema break: 'id' missing");
+        assert!(json.get("name").is_some(), "schema break: 'name' missing");
+        assert!(json.get("access").is_some(), "schema break: 'access' missing");
+        assert!(json.get("dataType").is_some(), "schema break: 'dataType' missing");
+
+        // Wave 4 semantic fields — MUST be present when populated
+        assert!(json.get("normalRange").is_some(), "schema break: 'normalRange' missing");
+        assert!(json.get("semanticRef").is_some(), "schema break: 'semanticRef' missing");
+        assert!(json.get("samplingHint").is_some(), "schema break: 'samplingHint' missing");
+        assert!(json.get("classificationTags").is_some(), "schema break: 'classificationTags' missing");
+
+        // Verify normalRange shape
+        let nr = json.get("normalRange").unwrap();
+        assert!(nr.get("min").is_some(), "schema break: normalRange.min missing");
+        assert!(nr.get("max").is_some(), "schema break: normalRange.max missing");
+
+        // Verify camelCase naming (not snake_case)
+        assert!(json.get("data_type").is_none(), "schema break: 'data_type' should be 'dataType'");
+        assert!(json.get("normal_range").is_none(), "schema break: 'normal_range' should be 'normalRange'");
+        assert!(json.get("semantic_ref").is_none(), "schema break: 'semantic_ref' should be 'semanticRef'");
+        assert!(json.get("sampling_hint").is_none(), "schema break: 'sampling_hint' should be 'samplingHint'");
+        assert!(json.get("classification_tags").is_none(), "schema break: 'classification_tags' should be 'classificationTags'");
+    }
+
+    #[test]
+    fn t4_1_data_catalog_entry_optional_fields_omitted() {
+        let entry = SovdDataCatalogEntry {
+            id: "minimal".into(),
+            name: "Minimal".into(),
+            description: None,
+            access: SovdDataAccess::ReadOnly,
+            data_type: SovdDataType::Integer,
+            unit: None,
+            did: None,
+            normal_range: None,
+            semantic_ref: None,
+            sampling_hint: None,
+            classification_tags: vec![],
+        };
+        let json = serde_json::to_value(&entry).unwrap();
+
+        // Optional fields MUST be omitted when None/empty (skip_serializing_if)
+        assert!(json.get("description").is_none(), "schema break: empty description should be omitted");
+        assert!(json.get("unit").is_none(), "schema break: empty unit should be omitted");
+        assert!(json.get("x-uds-did").is_none(), "schema break: empty did should be omitted");
+        assert!(json.get("normalRange").is_none(), "schema break: empty normalRange should be omitted");
+        assert!(json.get("semanticRef").is_none(), "schema break: empty semanticRef should be omitted");
+        assert!(json.get("samplingHint").is_none(), "schema break: empty samplingHint should be omitted");
+        assert!(json.get("classificationTags").is_none(), "schema break: empty classificationTags should be omitted");
+    }
+
+    #[test]
+    fn t4_1_fault_schema_stability() {
+        let fault = SovdFault {
+            id: "f1".into(),
+            component_id: "hpc".into(),
+            code: "P0123".into(),
+            display_code: Some("P0123".into()),
+            severity: SovdFaultSeverity::High,
+            status: SovdFaultStatus::Active,
+            name: "Test Fault".into(),
+            description: Some("A test fault".into()),
+            scope: Some("component".into()),
+            affected_subsystem: Some("powertrain".into()),
+            correlated_signals: vec!["Vehicle.Speed".into()],
+            classification_tags: vec!["emission".into()],
+        };
+        let json = serde_json::to_value(&fault).unwrap();
+
+        // Required fields
+        assert!(json.get("id").is_some(), "schema break: 'id' missing");
+        assert!(json.get("componentId").is_some(), "schema break: 'componentId' missing");
+        assert!(json.get("code").is_some(), "schema break: 'code' missing");
+        assert!(json.get("severity").is_some(), "schema break: 'severity' missing");
+        assert!(json.get("status").is_some(), "schema break: 'status' missing");
+        assert!(json.get("name").is_some(), "schema break: 'name' missing");
+
+        // Wave 4 ontology enrichment fields
+        assert!(json.get("affectedSubsystem").is_some(), "schema break: 'affectedSubsystem' missing");
+        assert!(json.get("correlatedSignals").is_some(), "schema break: 'correlatedSignals' missing");
+        assert!(json.get("classificationTags").is_some(), "schema break: 'classificationTags' missing");
+
+        // Verify camelCase
+        assert!(json.get("component_id").is_none(), "schema break: should be 'componentId'");
+        assert!(json.get("display_code").is_none(), "schema break: should be 'displayCode'");
+        assert!(json.get("affected_subsystem").is_none(), "schema break: should be 'affectedSubsystem'");
+        assert!(json.get("correlated_signals").is_none(), "schema break: should be 'correlatedSignals'");
+        assert!(json.get("classification_tags").is_none(), "schema break: should be 'classificationTags'");
+    }
+
+    #[test]
+    fn t4_1_fault_optional_fields_omitted() {
+        let fault = SovdFault {
+            id: "f2".into(),
+            component_id: "hpc".into(),
+            code: "P0456".into(),
+            display_code: None,
+            severity: SovdFaultSeverity::Low,
+            status: SovdFaultStatus::Passive,
+            name: "Minimal fault".into(),
+            description: None,
+            scope: None,
+            affected_subsystem: None,
+            correlated_signals: vec![],
+            classification_tags: vec![],
+        };
+        let json = serde_json::to_value(&fault).unwrap();
+        assert!(json.get("displayCode").is_none(), "empty displayCode should be omitted");
+        assert!(json.get("description").is_none(), "empty description should be omitted");
+        assert!(json.get("scope").is_none(), "empty scope should be omitted");
+        assert!(json.get("affectedSubsystem").is_none(), "empty affectedSubsystem should be omitted");
+        assert!(json.get("correlatedSignals").is_none(), "empty correlatedSignals should be omitted");
+        assert!(json.get("classificationTags").is_none(), "empty classificationTags should be omitted");
     }
 }

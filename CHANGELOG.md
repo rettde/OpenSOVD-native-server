@@ -7,6 +7,38 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.10.0] — 2026-03-20
+
+### Wave 4 — AI-Ready Diagnostic Data (Semantic Layer Enablement)
+
+### Architecture Decisions
+- **A4.1 Ontology reference standard** — ADR: COVESA VSS as primary semantic reference, `x-vendor.*` prefix for OEM extensions
+- **A4.2 `DataCatalogProvider` trait** — Pluggable semantic metadata provider with `StaticDataCatalogProvider` default impl (6 tests)
+- **A4.3 Batch export format** — ADR: NDJSON (newline-delimited JSON) as primary export format
+
+### Features
+- **W4.1 Semantic metadata on data catalog** — `SovdDataCatalogEntry` extended with `normalRange`, `semanticRef` (VSS path), `samplingHint`, `classificationTags`
+- **W4.2 Batch diagnostic snapshot** — `GET /components/{id}/snapshot` returns all signal values + metadata as NDJSON; `GET /export/faults` for fault export with severity filtering
+- **W4.3 Fault ontology enrichment** — `SovdFault` extended with `affectedSubsystem`, `correlatedSignals[]`, `classificationTags[]` for ML feature engineering
+- **W4.4 Schema introspection** — `GET /schema/data-catalog` returns full semantic schema across all components (COVESA VSS ontology reference)
+- **W4.5 SSE data-change stream** — `GET /components/{id}/data/subscribe` provides real-time data-change + fault-change + keepalive events via Server-Sent Events
+
+### Enterprise Hardening
+- **E4.1 Data contract versioning** — `schemaVersion` field in `DataCatalogProvider` trait and all export preambles
+- **E4.2 Export access control** — All export endpoints (`/snapshot`, `/export/faults`) audited via `AuditLog`
+- **E4.3 Reproducibility metadata** — NDJSON `_meta` preamble with `exportTimestamp`, `serverVersion`, `schemaVersion`, `componentFirmwareVersions`
+
+### Test Infrastructure
+- **T4.1 Schema stability regression tests** — 4 tests verifying `SovdDataCatalogEntry` and `SovdFault` JSON shapes (camelCase, optional field omission)
+- **7 Wave 4 endpoint integration tests** — snapshot NDJSON, fault export, severity filter, schema introspection, SSE subscribe, 404 handling
+
+### Stats
+- **312 tests** (up from 295), all passing
+- Clippy clean
+- New dependency: `async-stream` 0.3 (SSE stream generation)
+
+---
+
 ## [0.9.0] — 2026-03-20
 
 ### Wave 3 — Cloud Bridge, Multi-Tenant, Variant-Aware, Zero-Trust

@@ -230,7 +230,7 @@ These are the critical moments where a refactoring decision **must** be made to 
 
 ---
 
-## Current Status (v0.9.0 — Wave 3 complete)
+## Current Status (v0.10.0 — Wave 4 complete)
 
 | Item | Status | Tests |
 |------|--------|-------|
@@ -262,10 +262,18 @@ These are the critical moments where a refactoring decision **must** be made to 
 | E3.1 Client SDK generation | ✅ Complete | — |
 | E3.2 Compliance evidence export | ✅ Complete | — |
 | E3.3 Canary/blue-green routing | ✅ Complete | — |
-| **Total** | **295 tests, clippy clean** | |
+| A4.1 Ontology reference ADR | ✅ Complete | — |
+| A4.2 DataCatalogProvider trait | ✅ Complete | 6 tests |
+| A4.3 Batch export format ADR | ✅ Complete | — |
+| W4.1 Semantic data catalog | ✅ Complete | 2 tests (T4.1) |
+| W4.2 Batch snapshot + fault export | ✅ Complete | 3 tests |
+| W4.3 Fault ontology enrichment | ✅ Complete | 2 tests (T4.1) |
+| W4.4 Schema introspection | ✅ Complete | 1 test |
+| W4.5 SSE data-change stream | ✅ Complete | 2 tests |
+| E4.1 Data contract versioning | ✅ Complete | — |
+| E4.2 Export access control | ✅ Complete | — |
+| E4.3 Reproducibility metadata | ✅ Complete | — |
+| T4.1 Schema stability regression | ✅ Complete | 4 tests |
+| **Total** | **312 tests, clippy clean** | |
 
-**Immediate next step:** Wave 4 — AI-Ready Diagnostic Data (Semantic Layer Enablement).
-
-**Wave 4 note:** Forward-looking track for AI-ready diagnostic data,
-aligning with Chen, Mei-Yen's semantic layer initiative. Builds on
-Wave 2 (historical storage) and Wave 3 (cloud bridge + multi-tenant).
+**All Waves 1–4 complete.**

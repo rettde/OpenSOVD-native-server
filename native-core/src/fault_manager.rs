@@ -242,6 +242,9 @@ mod tests {
             name: format!("Fault {id}"),
             description: None,
             scope: None,
+            affected_subsystem: None,
+            correlated_signals: vec![],
+            classification_tags: vec![],
         }
     }
 

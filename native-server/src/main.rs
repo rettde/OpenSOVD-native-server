@@ -399,6 +399,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             proximity_store: Arc::new(DashMap::new()),
             package_store: Arc::new(DashMap::new()),
         },
+        data_catalog: Arc::new(native_interfaces::StaticDataCatalogProvider::new()),
     };
     // ── Bridge routes (Wave 3, W3.1) ─────────────────────────────────
     let app = if config.bridge.enabled {
