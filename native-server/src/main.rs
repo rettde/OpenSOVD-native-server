@@ -98,6 +98,75 @@ impl Default for LoggingConfig {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Config validation — fail-fast at startup
+// ─────────────────────────────────────────────────────────────────────────────
+
+impl AppConfig {
+    /// Validate configuration at startup. Returns a list of errors; empty = valid.
+    fn validate(&self) -> Vec<String> {
+        let mut errors = Vec::new();
+
+        // Server: port must be > 0 (type enforces u16)
+        if self.server.port == 0 {
+            errors.push("server.port must be > 0".into());
+        }
+
+        // TLS: cert and key must both be present or both absent
+        match (&self.server.cert_path, &self.server.key_path) {
+            (Some(_), None) => errors.push("server.cert_path is set but server.key_path is missing".into()),
+            (None, Some(_)) => errors.push("server.key_path is set but server.cert_path is missing".into()),
+            (Some(cert), Some(key)) => {
+                if !std::path::Path::new(cert).exists() {
+                    errors.push(format!("TLS cert file not found: {cert}"));
+                }
+                if !std::path::Path::new(key).exists() {
+                    errors.push(format!("TLS key file not found: {key}"));
+                }
+            }
+            (None, None) => {}
+        }
+
+        // mTLS: client_ca_path requires cert_path + key_path
+        if let Some(ref ca) = self.server.client_ca_path {
+            if self.server.cert_path.is_none() || self.server.key_path.is_none() {
+                errors.push("server.client_ca_path requires cert_path and key_path".into());
+            }
+            if !std::path::Path::new(ca).exists() {
+                errors.push(format!("Client CA file not found: {ca}"));
+            }
+        }
+
+        // Auth: if enabled, at least one auth method must be configured
+        if self.auth.enabled {
+            let has_api_key = self.auth.api_key.is_some();
+            let has_jwt = self.auth.jwt_secret.is_some();
+            let has_oidc = self.auth.oidc_issuer_url.is_some();
+            if !has_api_key && !has_jwt && !has_oidc {
+                errors.push("auth.enabled is true but no auth method configured (api_key, jwt_secret, or oidc_issuer_url)".into());
+            }
+        }
+
+        // Backends: validate URLs look reasonable
+        for (i, backend) in self.backends.iter().enumerate() {
+            if !backend.base_url.starts_with("http://") && !backend.base_url.starts_with("https://") {
+                errors.push(format!(
+                    "backends[{i}] '{}': base_url must start with http:// or https://, got '{}'",
+                    backend.name, backend.base_url
+                ));
+            }
+            if backend.component_ids.is_empty() {
+                errors.push(format!(
+                    "backends[{i}] '{}': component_ids is empty (backend owns no components)",
+                    backend.name
+                ));
+            }
+        }
+
+        errors
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -128,6 +197,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .with(fmt::layer())
             .with(dlt_layer)
             .init();
+    }
+
+    // ── Config validation (fail-fast) ─────────────────────────────────
+    let config_errors = config.validate();
+    if !config_errors.is_empty() {
+        for err in &config_errors {
+            tracing::error!(target: "config", "{err}");
+        }
+        return Err(format!(
+            "Configuration has {} error(s) — aborting startup",
+            config_errors.len()
+        )
+        .into());
     }
 
     info!("OpenSOVD-native-server starting");
