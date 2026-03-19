@@ -2443,7 +2443,7 @@ mod tests {
     use http::StatusCode;
     use tower::ServiceExt;
 
-    // ── Mock backend for tests (replaces removed LocalUdsBackend) ──────
+    // ── Mock backend for tests ─────────────────────────────────────────
 
     struct MockBackend;
 
@@ -4019,9 +4019,8 @@ mod tests {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MockBackend-based tests — proves Gateway architecture works with ANY backend
-// These tests do NOT depend on the "local-uds" feature and validate that
-// the SOVD Server correctly dispatches through the ComponentBackend trait.
+// MockBackend-based tests — proves Gateway architecture works with ANY backend.
+// The SOVD Server dispatches through the ComponentBackend trait object.
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[cfg(test)]

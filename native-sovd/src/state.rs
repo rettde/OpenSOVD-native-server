@@ -4,10 +4,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared application state — injected into axum handlers via State extractor
 //
-// Uses ComponentBackend (trait object) instead of SovdTranslator directly.
-// This enables the OpenSOVD Gateway pattern where the server dispatches to:
+// Uses ComponentBackend (trait object) for the OpenSOVD Gateway pattern.
+// The server dispatches SOVD REST requests to one or more backends:
 //   - SovdHttpBackend  → external CDA via SOVD REST API (standard-conformant)
-//   - LocalUdsBackend  → embedded UDS/DoIP (standalone mode)
 //
 // Sub-grouped into logical domains to keep the struct manageable as features
 // are added (Wave 1–3). Each sub-state is Arc-wrapped and Clone-friendly.

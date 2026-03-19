@@ -230,19 +230,29 @@ These are the critical moments where a refactoring decision **must** be made to 
 
 ---
 
-## Current Status (v0.6.0 — Wave 1 complete)
+## Current Status (v0.8.0 — Wave 2 complete)
 
 | Item | Status | Tests |
 |------|--------|-------|
 | W1.1 Fine-Grained AuthZ | ✅ Complete | Covered |
 | W1.2 Diagnostic Audit Trail | ✅ Complete | Covered |
 | A1.1–A1.6 Arch Gate | ✅ Complete | Covered |
-| W1.3 Apps/Funcs Entities | ✅ Complete | 14 new tests |
-| W1.4 SW Package Lifecycle | ✅ Complete | 6 new tests |
-| E1.1–E1.3 Hardening | Deferred to Wave 2 | — |
-| **Total** | **230 tests, clippy clean** | |
+| W1.3 Apps/Funcs Entities | ✅ Complete | 14 tests |
+| W1.4 SW Package Lifecycle | ✅ Complete | 6 tests |
+| E1.1 Audit hash chaining | ✅ Complete | 6 tests |
+| E1.2 Structured JSON logging | ✅ Complete | — |
+| E1.3 RED metrics per endpoint | ✅ Complete | — |
+| A2.1 StorageBackend trait | ✅ Complete | 11 tests |
+| A2.2 ComponentBackend diet | ✅ Complete | — |
+| A2.3 Secrets abstraction | ✅ Complete | 8 tests |
+| A2.4 OpenTelemetry OTLP | ✅ Complete | — |
+| A2.5 Per-client rate limiting | ✅ Complete | 5 tests |
+| W2.1 KPI / system-info | ✅ Complete | 1 test |
+| W2.3 FaultGovernor | ✅ Complete | 8 tests |
+| W2.4 Mode/session model | ✅ Complete | — |
+| **Total** | **269 tests, clippy clean** | |
 
-**Immediate next step:** Wave 2 — Data Infrastructure & Observability.
+**Immediate next step:** Wave 3 — Integration & Cloud Bridge.
 
 **Wave 4 note:** Added as forward-looking track for AI-ready diagnostic data,
 aligning with Chen, Mei-Yen's semantic layer initiative. No blocking dependencies

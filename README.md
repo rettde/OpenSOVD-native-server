@@ -81,7 +81,7 @@ SOVD Clients (HTTP/JSON)
 - **SOME/IP** — [COVESA/vsomeip](https://github.com/COVESA/vsomeip) FFI bindings (optional)
 - **Health Monitoring** — CPU, memory, system metrics via `/sovd/v1/health`
 - **Prometheus Metrics** — `sovd_http_requests_total`, `sovd_http_request_duration_seconds`
-- **227 tests**, Clippy pedantic clean, `#![forbid(unsafe_code)]` (except vSomeIP FFI)
+- **269 tests**, Clippy pedantic clean, `#![forbid(unsafe_code)]` (except vSomeIP FFI)
 
 ## Workspace Structure
 

@@ -15,8 +15,8 @@ use crate::ConnectionError;
 /// transport (DoIP, CAN, mock, etc.).
 ///
 /// Implementations:
-///   - `DoipConnection` (native-comm-doip) — real DoIP over TCP/TLS
-///   - Test mocks for unit testing UDS logic without network
+///   - `SovdHttpBackend` (native-core) — proxies to external CDA/SOVD backends
+///   - Test mocks for unit testing without network
 #[async_trait]
 pub trait DiagTransport: Send + Sync {
     /// Send a raw diagnostic request and receive the UDS response.

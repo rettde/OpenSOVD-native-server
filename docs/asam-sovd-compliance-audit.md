@@ -1,6 +1,6 @@
 # ASAM SOVD V1.0.0 Compliance Audit
 
-**Project:** OpenSOVD-native-server v0.5.0
+**Project:** OpenSOVD-native-server v0.8.0
 **Date:** 2026-03-16
 **Scope:** Full codebase audit against ASAM SOVD V1.0.0 (Association for Standardization of Automation and Measuring Systems — Service-Oriented Vehicle Diagnostics API Specification)
 **Basis:** ASAM SOVD BS V1.0.0, publicly available ASAM presentations, Softing SOVD documentation, Vector SOVD whitepaper, Eclipse OpenSOVD design references
@@ -358,7 +358,7 @@ Files modified: `native-sovd/src/routes.rs`, `native-sovd/src/openapi.rs`, `nati
 
 ## 9. Test Coverage
 
-- **152 tests** passing (`cargo test --workspace`)
+- **269 tests** passing (`cargo test --workspace`)
 - **0 clippy warnings** (`cargo clippy --workspace -- -D warnings`)
 - **Format clean** (`cargo fmt --all -- --check`)
 - Integration tests cover mock CDA discovery, cache population, HTTP error mapping
