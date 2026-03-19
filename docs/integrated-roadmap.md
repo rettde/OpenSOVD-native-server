@@ -135,6 +135,49 @@
 
 ---
 
+## Wave 4 — AI-Ready Diagnostic Data (Semantic Layer Enablement)
+
+> **Context:** Chen, Mei-Yen drives SOVD as a structured data source for AI-assisted
+> vehicle diagnostics. Her semantic layer / ML pipeline sits *on top of* the SOVD API.
+> Wave 4 ensures the server exposes data with enough **machine-readable metadata** that
+> downstream AI consumers don't need manual data-wrangling or reverse-engineering of
+> diagnostic formats. The SOVD server does *not* own the ontology or ML models — it
+> provides the **annotated, exportable, reproducible data contracts** they depend on.
+
+### Wave 4 Arch Gate
+
+| ID | Type | Item | Rationale | Effort |
+|----|------|------|-----------|--------|
+| A4.1 | 🏗️ | **ADR: Ontology reference standard** | Decision: (a) COVESA VSS paths as primary reference, (b) IFEX as superset, (c) vendor-defined ontology with VSS mapping. Mei-Yen references VSS + IFEX openness. The SOVD server must commit to *one* schema for `semanticRef` fields before data catalog endpoints ship. Write ADR during Wave 3. | S (doc) |
+| A4.2 | 🏗️ | **`DataCatalogProvider` trait** | Before enriching data endpoints with metadata, define a trait: `fn metadata(component_id, data_id) -> DataSemantics` returning unit, range, VSS path, data type, sampling hint. Default impl: static from CDF/ODX. Pluggable for OEM-specific ontology sources. | M |
+| A4.3 | 🏗️ | **Batch export serialization format** | Decision: (a) JSONL streaming, (b) Apache Arrow / Parquet via IPC, (c) CSV with schema header. ML pipelines need columnar or streaming formats — single-resource REST is too slow for training data. Decide before implementing W4.2. | S (doc) |
+
+### Wave 4 Features
+
+| ID | Type | Item | Depends on | Effort |
+|----|------|------|------------|--------|
+| W4.1 | 🔧 | **Semantic metadata on data catalog** — extend `SovdDataCatalogEntry` with `unit`, `normalRange`, `dataType`, `semanticRef` (VSS/IFEX path), `samplingHint` | A4.1, A4.2 | M |
+| W4.2 | 🔧 | **Batch diagnostic snapshot export** — `GET /components/{id}/snapshot` returns all current signal values + metadata in a single response; `GET /export/faults?from=&to=` for time-range fault export | A4.3, W2.2 | M |
+| W4.3 | 🔧 | **Fault ontology enrichment** — extend `SovdFault` with `affectedSubsystem`, `correlatedSignals[]`, `classificationTags[]` for ML feature engineering | A4.1 | M |
+| W4.4 | 🔧 | **Schema introspection endpoint** — `GET /schema/data-catalog` returns the full semantic schema (all data items across all components with metadata) for pipeline bootstrapping | A4.2, W4.1 | S |
+| W4.5 | 🔧 | **SSE data-change stream** — extend existing fault SSE with data-value change events for real-time ML inference at the edge | W4.1 | M |
+
+### Wave 4 Enterprise Hardening
+
+| ID | Type | Item | Rationale | Effort |
+|----|------|------|-----------|--------|
+| E4.1 | 🛡️ | **Data contract versioning** | Semantic schema changes must be versioned (`schemaVersion` field). ML models trained on v1 schema must not silently receive v2 data. Breaking changes → new version. | S |
+| E4.2 | 🛡️ | **Export access control** | Batch export endpoints expose large data volumes. Gate behind a dedicated `export` scope/role in `AuthzPolicy`. Audit every export request. | S |
+| E4.3 | 🛡️ | **Reproducibility metadata** | Every export includes `exportTimestamp`, `serverVersion`, `schemaVersion`, `componentFirmwareVersions`. ML experiments need exact provenance. | S |
+
+### Wave 4 Test Infrastructure
+
+| ID | Type | Item | Rationale | Effort |
+|----|------|------|-----------|--------|
+| T4.1 | 🧪 | **Schema stability regression test** | CI test that verifies `SovdDataCatalogEntry` and `SovdFault` JSON shapes haven't changed without a schema version bump. Prevents silent ML pipeline breakage. | S |
+
+---
+
 ## Sequencing Summary
 
 ```
@@ -159,6 +202,12 @@ Wave 3  ┌─ A3.1 ADR: Bridge topology W3.1 Cloud bridge        E3.1 Client SD
         │  A3.3 TenantContext MW      W3.3 Variant-aware       E3.3 Canary deploy
         │  A3.4 BridgeTransport trait W3.4 Zero-trust
         └  A3.5 API versioning
+
+Wave 4  ┌─ A4.1 ADR: Ontology std    W4.1 Semantic data       E4.1 Data contract ver.
+(AI)    │  A4.2 DataCatalogProvider   W4.2 Batch export        E4.2 Export access ctrl
+        │  A4.3 ADR: Export format    W4.3 Fault ontology      E4.3 Reproducibility
+        └                             W4.4 Schema endpoint     T4.1 Schema stability
+                                      W4.5 Data-change SSE
 ```
 
 ---
@@ -175,6 +224,9 @@ These are the critical moments where a refactoring decision **must** be made to 
 | **Secrets abstraction** | Before W2.2 | W2.2 adds DB credentials for history store. If they go in TOML plaintext, security audit fails. |
 | **Tenant isolation ADR** | Before W3.2 | W3.2 needs tenant-scoped storage. The storage schema from W2.2 must anticipate this, so the ADR should be written during Wave 2 even though implementation is Wave 3. |
 | **Bridge topology ADR** | Before W3.1 | Determines whether `native-bridge` is a separate crate/binary or a mode of the existing server. Affects crate layout. Write the ADR during Wave 2. |
+| **Ontology standard ADR** | During Wave 3 | W4.1 adds `semanticRef` to data catalog. The reference standard (VSS, IFEX, vendor-defined) must be decided before schema fields are published. Once ML pipelines depend on the format, changing it is extremely costly. |
+| **DataCatalogProvider trait** | Before W4.1 | W4.1 enriches data endpoints with metadata. Without a trait, metadata sources are hardcoded. OEMs have different ontology sources (CDF, ODX, proprietary). |
+| **Export format ADR** | Before W4.2 | Batch export format (JSONL, Arrow, CSV) is a long-lived contract with ML pipelines. Changing it later breaks training infrastructure. |
 
 ---
 
@@ -184,9 +236,13 @@ These are the critical moments where a refactoring decision **must** be made to 
 |------|--------|-------|
 | W1.1 Fine-Grained AuthZ | ✅ Complete | Covered |
 | W1.2 Diagnostic Audit Trail | ✅ Complete | 208 tests, clippy clean |
-| A1.1–A1.6 Arch Gate | ⏳ **Next** | — |
+| A1.1–A1.6 Arch Gate | ✅ Complete | 210 tests, clippy clean |
 | E1.1–E1.3 Hardening | Pending | — |
-| W1.3 Apps/Funcs | Blocked on A1.5 | — |
-| W1.4 SW Packages | Blocked on A1.5 | — |
+| W1.3 Apps/Funcs | ⏳ **Next** (unblocked by A1.5) | — |
+| W1.4 SW Packages | Pending (unblocked by A1.5) | — |
 
-**Immediate next step:** Land the Wave 1 Arch Gate (A1.1–A1.6), then proceed to W1.3 Apps/Funcs.
+**Immediate next step:** W1.3 Apps/Funcs entities, then W1.4 SW Packages.
+
+**Wave 4 note:** Added as forward-looking track for AI-ready diagnostic data,
+aligning with Chen, Mei-Yen's semantic layer initiative. No blocking dependencies
+on current work — Wave 4 builds on Wave 2 (historical storage) and Wave 3 (cloud bridge).
