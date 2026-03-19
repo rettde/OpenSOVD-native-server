@@ -181,6 +181,37 @@ pub trait ComponentBackend: Send + Sync {
         ))
     }
 
+    /// Activate an installed software package (make it the running version)
+    async fn activate_software_package(
+        &self,
+        _component_id: &str,
+        _package_id: &str,
+    ) -> Result<SovdSoftwarePackage, DiagServiceError> {
+        Err(DiagServiceError::RequestNotSupported(
+            "activate not supported by this backend".into(),
+        ))
+    }
+
+    /// Rollback a software package to its previous version
+    async fn rollback_software_package(
+        &self,
+        _component_id: &str,
+        _package_id: &str,
+    ) -> Result<SovdSoftwarePackage, DiagServiceError> {
+        Err(DiagServiceError::RequestNotSupported(
+            "rollback not supported by this backend".into(),
+        ))
+    }
+
+    /// Get detailed status of a specific software package
+    fn get_software_package_status(
+        &self,
+        _component_id: &str,
+        _package_id: &str,
+    ) -> Result<SovdSoftwarePackage, DiagServiceError> {
+        Err(DiagServiceError::NotFound(Some("package not found".into())))
+    }
+
     // ── Extended Diagnostics (vendor extensions, x-prefixed) ────────────────
 
     /// I/O control on a data identifier
@@ -232,5 +263,98 @@ pub trait ComponentBackend: Send + Sync {
     /// Get list of component IDs with active keepalive sessions
     fn active_keepalives(&self) -> Vec<String> {
         vec![]
+    }
+}
+
+// ── Entity Backend (ISO 17978-3 §4.2.3: Apps + Funcs) ────────────────────
+
+use crate::sovd::{SovdApp, SovdFunc};
+
+/// Backend abstraction for non-component SOVD entities (apps, funcs).
+///
+/// Separate from `ComponentBackend` to keep the component trait focused.
+/// Default implementations return empty collections / not-found — backends
+/// only override what they support.
+#[async_trait]
+pub trait EntityBackend: Send + Sync {
+    // ── Apps ───────────────────────────────────────────────────────────────
+
+    /// List all diagnostic applications
+    fn list_apps(&self) -> Vec<SovdApp> {
+        vec![]
+    }
+
+    /// Get a single app by ID
+    fn get_app(&self, _app_id: &str) -> Option<SovdApp> {
+        None
+    }
+
+    /// List data catalog for an app
+    fn list_app_data(&self, _app_id: &str) -> Result<Vec<SovdDataCatalogEntry>, DiagServiceError> {
+        Ok(vec![])
+    }
+
+    /// Read a data value from an app
+    async fn read_app_data(
+        &self,
+        _app_id: &str,
+        _data_id: &str,
+    ) -> Result<serde_json::Value, DiagServiceError> {
+        Err(DiagServiceError::NotFound(Some(
+            "app data not found".into(),
+        )))
+    }
+
+    /// List operations available on an app
+    fn list_app_operations(&self, _app_id: &str) -> Result<Vec<SovdOperation>, DiagServiceError> {
+        Ok(vec![])
+    }
+
+    /// Execute an operation on an app
+    async fn execute_app_operation(
+        &self,
+        _app_id: &str,
+        _op_id: &str,
+        _params: Option<&[u8]>,
+    ) -> Result<serde_json::Value, DiagServiceError> {
+        Err(DiagServiceError::RequestNotSupported(
+            "app operations not supported".into(),
+        ))
+    }
+
+    /// Get capabilities for an app
+    fn get_app_capabilities(&self, _app_id: &str) -> Result<SovdCapabilities, DiagServiceError> {
+        Err(DiagServiceError::NotFound(Some("app not found".into())))
+    }
+
+    // ── Funcs ──────────────────────────────────────────────────────────────
+
+    /// List all cross-component diagnostic functions
+    fn list_funcs(&self) -> Vec<SovdFunc> {
+        vec![]
+    }
+
+    /// Get a single func by ID
+    fn get_func(&self, _func_id: &str) -> Option<SovdFunc> {
+        None
+    }
+
+    /// List data catalog for a func
+    fn list_func_data(
+        &self,
+        _func_id: &str,
+    ) -> Result<Vec<SovdDataCatalogEntry>, DiagServiceError> {
+        Ok(vec![])
+    }
+
+    /// Read a data value from a func
+    async fn read_func_data(
+        &self,
+        _func_id: &str,
+        _data_id: &str,
+    ) -> Result<serde_json::Value, DiagServiceError> {
+        Err(DiagServiceError::NotFound(Some(
+            "func data not found".into(),
+        )))
     }
 }

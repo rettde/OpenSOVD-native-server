@@ -7,7 +7,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [0.6.0] — 2026-03-18
+## [0.6.0] — 2026-03-19
+
+### Wave 1 Complete — Enterprise Readiness + Full Entity Model
 
 ### Architecture
 - **OEM Plugin Interface** (CDA-inspired trait hierarchy):
@@ -21,6 +23,34 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Proprietary profiles are `.gitignore`d, open-source builds use `SampleOemProfile`
 - **AuthState**: bundles `AuthConfig` + `Arc<dyn OemProfile>` for the auth middleware
 - MBDS-specific fields (`required_vin`, `allowed_scopes`) removed from `AuthConfig` → live in OEM profile
+- **A1.1 Graceful shutdown** with connection draining (10s grace period on TLS, audit log flush)
+- **A1.2 Health probes**: `/healthz` (liveness) + `/readyz` (readiness with subsystem checks)
+- **A1.3 Request body size limit + per-endpoint timeout** (already existed, verified)
+- **A1.4 Config validation at startup** (fail-fast: TLS consistency, port range, backend URLs)
+- **A1.5 AppState sub-grouping**: `DiagState`, `SecurityState`, `RuntimeState` sub-structs
+- **A1.6 Typed error taxonomy**: `SovdErrorCode` enum with stable codes, HTTP status mappings
+
+### W1.3 — Full Apps / Funcs Entities (ISO 17978-3 §4.2.3)
+- **`SovdApp`** type: id, name, description, version, status (Running/Stopped/Error)
+- **`SovdFunc`** type: id, name, description, sourceComponents
+- **`EntityBackend` trait** with default implementations for all methods
+- 11 new REST endpoints:
+  - `GET /apps`, `GET /apps/{id}`, `GET /apps/{id}/capabilities`
+  - `GET /apps/{id}/data`, `GET /apps/{id}/data/{data_id}`
+  - `GET /apps/{id}/operations`, `POST /apps/{id}/operations/{op_id}`
+  - `GET /funcs`, `GET /funcs/{id}`
+  - `GET /funcs/{id}/data`, `GET /funcs/{id}/data/{data_id}`
+- Full OData pagination support on collection endpoints
+- `ComponentRouter` implements `EntityBackend` (default empty — ready for backends to override)
+
+### W1.4 — Software-Package Lifecycle (SOVD §5.5.10)
+- Extended `SovdSoftwarePackageStatus`: Available → Downloading → Downloaded → Installing → Installed → Activated → RollingBack → Failed
+- Extended `SovdSoftwarePackage` with lifecycle fields: previousVersion, progress, componentId, updatedAt, error
+- **`SovdSoftwarePackageManifest`** type for OTA upload metadata
+- New backend methods: `activate_software_package`, `rollback_software_package`, `get_software_package_status`
+- 2 new REST endpoints: `POST .../software-packages/{id}/activate`, `POST .../software-packages/{id}/rollback`
+- In-memory `package_store` (DashMap) for real-time progress tracking
+- Audit trail integration for all lifecycle actions
 
 ### Refactoring
 - `auth_middleware` delegates token validation/claim checks to `AuthPolicy`
@@ -29,17 +59,23 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `serve_docs` handler extracts `CdfPolicy` from `AppState`
 - Removed hardcoded `validate_entity_id()` function
 - Removed hardcoded MBDS scopes/VIN/403-status from auth module
+- Error helpers refactored to use `SovdErrorCode` enum
 
 ### Documentation
 - `ADR-0001` updated with implemented architecture, isolation strategy, verification results
 - `oem_sample.rs`: step-by-step guide (Copy → Rename → Implement → Register) with
   examples for VIN-binding, scope-ceiling, region-restriction, workshop-ID,
   entity-ID format, CDF extensions, proximity proof, and more
+- Integrated roadmap with Wave 4 (AI-Ready Diagnostic Data) based on semantic layer vision
 
 ### Testing
-- **168 tests** with OEM profile present, **161 tests** without (open-source build)
-- New tests in `oem_sample.rs`: `sample_profile_uses_standard_defaults`, `sample_profile_metadata`
-- Clippy pedantic clean across entire workspace (both configurations)
+- **230 tests** across the workspace (all passing, clippy clean):
+  - `native-interfaces` — 33 tests
+  - `native-core` — 53 tests
+  - `native-health` — 6 tests
+  - `native-sovd` — 137 tests (incl. 20 new W1.3/W1.4 tests)
+  - 1 doctest
+- Clippy pedantic clean across entire workspace
 
 ---
 

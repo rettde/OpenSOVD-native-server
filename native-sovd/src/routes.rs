@@ -361,12 +361,40 @@ pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
             "/components/{component_id}/software-packages/{package_id}/status",
             get(get_software_package_status),
         )
-        // Entity collection stubs (§4.2.3)
+        // Software Package lifecycle — new routes (Wave 1.4)
+        .route(
+            "/components/{component_id}/software-packages/{package_id}/activate",
+            post(activate_software_package),
+        )
+        .route(
+            "/components/{component_id}/software-packages/{package_id}/rollback",
+            post(rollback_software_package),
+        )
+        // Apps (ISO 17978-3 §4.2.3)
         .route("/apps", get(list_apps))
+        .route("/apps/{app_id}", get(get_app))
+        .route("/apps/{app_id}/capabilities", get(get_app_capabilities))
+        .route("/apps/{app_id}/data", get(list_app_data))
+        .route("/apps/{app_id}/data/{data_id}", get(read_app_data))
+        .route("/apps/{app_id}/operations", get(list_app_operations))
+        .route(
+            "/apps/{app_id}/operations/{op_id}",
+            post(execute_app_operation),
+        )
+        // Funcs (ISO 17978-3 §4.2.3)
         .route("/funcs", get(list_funcs))
+        .route("/funcs/{func_id}", get(get_func))
+        .route("/funcs/{func_id}/data", get(list_func_data))
+        .route("/funcs/{func_id}/data/{data_id}", get(read_func_data))
         // Configuration (§7.8)
-        .route("/components/{component_id}/configurations", get(read_config))
-        .route("/components/{component_id}/configurations", put(write_config))
+        .route(
+            "/components/{component_id}/configurations",
+            get(read_config),
+        )
+        .route(
+            "/components/{component_id}/configurations",
+            put(write_config),
+        )
         // Proximity Challenge (§7.9)
         .route(
             "/components/{component_id}/proximity-challenge",
@@ -390,10 +418,16 @@ pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
         .route("/components/{component_id}/docs", get(serve_docs))
         .route("/components/{component_id}/data/docs", get(serve_docs))
         .route("/components/{component_id}/faults/docs", get(serve_docs))
-        .route("/components/{component_id}/operations/docs", get(serve_docs))
+        .route(
+            "/components/{component_id}/operations/docs",
+            get(serve_docs),
+        )
         .route("/components/{component_id}/modes/docs", get(serve_docs))
         .route("/components/{component_id}/locks/docs", get(serve_docs))
-        .route("/components/{component_id}/configurations/docs", get(serve_docs))
+        .route(
+            "/components/{component_id}/configurations/docs",
+            get(serve_docs),
+        )
         .route("/components/{component_id}/logs/docs", get(serve_docs))
         // OData metadata (§5.2)
         .route("/$metadata", get(odata_metadata))
@@ -497,10 +531,12 @@ pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
             },
             auth_middleware,
         ))
-        .layer(axum::middleware::from_fn(move |matched_path, request, next| {
-            let profile = oem_profile.clone();
-            entity_id_validation_middleware(profile, matched_path, request, next)
-        }))
+        .layer(axum::middleware::from_fn(
+            move |matched_path, request, next| {
+                let profile = oem_profile.clone();
+                entity_id_validation_middleware(profile, matched_path, request, next)
+            },
+        ))
         .layer(axum::middleware::from_fn(trace_id_middleware))
         .layer(TraceLayer::new_for_http())
         .layer(concurrency_limit)
@@ -730,8 +766,14 @@ async fn connect_component(
         .await
         .map_err(|ref e| diag_error(e))?;
     state.security.audit_log.record(
-        "anonymous", SovdAuditAction::Connect,
-        &format!("component/{component_id}"), "connect", "POST", "success", None, None,
+        "anonymous",
+        SovdAuditAction::Connect,
+        &format!("component/{component_id}"),
+        "connect",
+        "POST",
+        "success",
+        None,
+        None,
     );
     Ok(StatusCode::NO_CONTENT)
 }
@@ -746,8 +788,14 @@ async fn disconnect_component(
         .await
         .map_err(|ref e| diag_error(e))?;
     state.security.audit_log.record(
-        "anonymous", SovdAuditAction::Disconnect,
-        &format!("component/{component_id}"), "disconnect", "POST", "success", None, None,
+        "anonymous",
+        SovdAuditAction::Disconnect,
+        &format!("component/{component_id}"),
+        "disconnect",
+        "POST",
+        "success",
+        None,
+        None,
     );
     Ok(StatusCode::NO_CONTENT)
 }
@@ -759,7 +807,10 @@ async fn list_faults(
     Path(component_id): Path<String>,
     axum::extract::Query(params): axum::extract::Query<PaginationParams>,
 ) -> Result<Json<Collection<serde_json::Value>>, (StatusCode, Json<SovdErrorEnvelope>)> {
-    let faults = state.diag.fault_manager.get_faults_for_component(&component_id);
+    let faults = state
+        .diag
+        .fault_manager
+        .get_faults_for_component(&component_id);
     Ok(Json(
         paginate(faults, &params)?.with_context("$metadata#faults"),
     ))
@@ -778,8 +829,14 @@ async fn clear_faults(
         .fault_manager
         .clear_faults_for_component(&component_id);
     state.security.audit_log.record(
-        &caller.0, SovdAuditAction::ClearFaults,
-        &format!("component/{component_id}"), "faults", "DELETE", "success", None, None,
+        &caller.0,
+        SovdAuditAction::ClearFaults,
+        &format!("component/{component_id}"),
+        "faults",
+        "DELETE",
+        "success",
+        None,
+        None,
     );
     Ok(StatusCode::NO_CONTENT)
 }
@@ -860,8 +917,14 @@ async fn write_data(
         .await
         .map_err(|ref e| diag_error(e))?;
     state.security.audit_log.record(
-        &caller.0, SovdAuditAction::WriteData,
-        &format!("component/{component_id}"), &format!("data/{data_id}"), "PUT", "success", None, None,
+        &caller.0,
+        SovdAuditAction::WriteData,
+        &format!("component/{component_id}"),
+        &format!("data/{data_id}"),
+        "PUT",
+        "success",
+        None,
+        None,
     );
     Ok(StatusCode::NO_CONTENT)
 }
@@ -988,9 +1051,14 @@ async fn execute_operation(
     );
 
     state.security.audit_log.record(
-        &caller.0, SovdAuditAction::ExecuteOperation,
-        &format!("component/{component_id}"), &format!("operations/{op_id}"),
-        "POST", "success", Some(&exec_id), None,
+        &caller.0,
+        SovdAuditAction::ExecuteOperation,
+        &format!("component/{component_id}"),
+        &format!("operations/{op_id}"),
+        "POST",
+        "success",
+        Some(&exec_id),
+        None,
     );
     Ok((StatusCode::ACCEPTED, resp_headers, Json(final_exec)))
 }
@@ -1206,9 +1274,14 @@ async fn start_flash(
         .await
         .map_err(|ref e| diag_error(e))?;
     state.security.audit_log.record(
-        &caller.0, SovdAuditAction::FlashStart,
-        &format!("component/{component_id}"), "flash",
-        "POST", "success", None, None,
+        &caller.0,
+        SovdAuditAction::FlashStart,
+        &format!("component/{component_id}"),
+        "flash",
+        "POST",
+        "success",
+        None,
+        None,
     );
     Ok((StatusCode::ACCEPTED, Json(result)))
 }
@@ -1373,7 +1446,10 @@ async fn get_fault_by_id(
         }
     }
     // Check component faults
-    let faults = state.diag.fault_manager.get_faults_for_component(&component_id);
+    let faults = state
+        .diag
+        .fault_manager
+        .get_faults_for_component(&component_id);
     faults
         .into_iter()
         .find(|f| f.id == fault_id)
@@ -1413,8 +1489,14 @@ async fn acquire_lock(
         .acquire(&component_id, owner, body.expires)
         .map_err(|e| conflict(&e))?;
     state.security.audit_log.record(
-        owner, SovdAuditAction::AcquireLock,
-        &format!("component/{component_id}"), "lock", "POST", "success", None, None,
+        owner,
+        SovdAuditAction::AcquireLock,
+        &format!("component/{component_id}"),
+        "lock",
+        "POST",
+        "success",
+        None,
+        None,
     );
     Ok((StatusCode::CREATED, Json(lock)))
 }
@@ -1449,8 +1531,14 @@ async fn release_lock(
     }
     state.diag.lock_manager.release(&component_id);
     state.security.audit_log.record(
-        &caller.0, SovdAuditAction::ReleaseLock,
-        &format!("component/{component_id}"), "lock", "DELETE", "success", None, None,
+        &caller.0,
+        SovdAuditAction::ReleaseLock,
+        &format!("component/{component_id}"),
+        "lock",
+        "DELETE",
+        "success",
+        None,
+        None,
     );
     Ok(StatusCode::NO_CONTENT)
 }
@@ -1773,9 +1861,14 @@ async fn set_mode(
         .get_mode(&component_id)
         .map_err(|ref e| diag_error(e))?;
     state.security.audit_log.record(
-        &caller.0, SovdAuditAction::SetMode,
-        &format!("component/{component_id}"), &format!("modes/{}", body.mode),
-        "POST", "success", None, None,
+        &caller.0,
+        SovdAuditAction::SetMode,
+        &format!("component/{component_id}"),
+        &format!("modes/{}", body.mode),
+        "POST",
+        "success",
+        None,
+        None,
     );
     Ok(Json(mode))
 }
@@ -1852,9 +1945,14 @@ async fn install_software_package(
         .await
         .map_err(|ref e| diag_error(e))?;
     state.security.audit_log.record(
-        &caller.0, SovdAuditAction::InstallPackage,
-        &format!("component/{component_id}"), &format!("software-packages/{package_id}"),
-        "POST", "success", None, None,
+        &caller.0,
+        SovdAuditAction::InstallPackage,
+        &format!("component/{component_id}"),
+        &format!("software-packages/{package_id}"),
+        "POST",
+        "success",
+        None,
+        None,
     );
     Ok((StatusCode::ACCEPTED, Json(pkg)))
 }
@@ -1881,24 +1979,190 @@ async fn get_software_package_status(
     })))
 }
 
-// ── Entity Collection Stubs (ASAM SOVD §4.2.3) ─────────────────────────
+async fn activate_software_package(
+    State(state): State<AppState>,
+    caller: CallerIdentity,
+    Path((component_id, package_id)): Path<(String, String)>,
+) -> Result<Json<SovdSoftwarePackage>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
+    let pkg = state
+        .backend
+        .activate_software_package(&component_id, &package_id)
+        .await
+        .map_err(|ref e| diag_error(e))?;
+    state
+        .runtime
+        .package_store
+        .insert(format!("{component_id}/{package_id}"), pkg.clone());
+    state.security.audit_log.record(
+        &caller.0,
+        SovdAuditAction::InstallPackage,
+        &format!("component/{component_id}"),
+        &format!("software-packages/{package_id}/activate"),
+        "POST",
+        "success",
+        None,
+        None,
+    );
+    Ok(Json(pkg))
+}
+
+async fn rollback_software_package(
+    State(state): State<AppState>,
+    caller: CallerIdentity,
+    Path((component_id, package_id)): Path<(String, String)>,
+) -> Result<Json<SovdSoftwarePackage>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
+    let pkg = state
+        .backend
+        .rollback_software_package(&component_id, &package_id)
+        .await
+        .map_err(|ref e| diag_error(e))?;
+    state
+        .runtime
+        .package_store
+        .insert(format!("{component_id}/{package_id}"), pkg.clone());
+    state.security.audit_log.record(
+        &caller.0,
+        SovdAuditAction::InstallPackage,
+        &format!("component/{component_id}"),
+        &format!("software-packages/{package_id}/rollback"),
+        "POST",
+        "success",
+        None,
+        None,
+    );
+    Ok(Json(pkg))
+}
+
+// ── Apps (ISO 17978-3 §4.2.3) ───────────────────────────────────────────
 
 async fn list_apps(
+    State(state): State<AppState>,
     axum::extract::Query(params): axum::extract::Query<PaginationParams>,
 ) -> Result<Json<Collection<serde_json::Value>>, (StatusCode, Json<SovdErrorEnvelope>)> {
-    let items: Vec<serde_json::Value> = vec![];
+    let items = state.entity_backend.list_apps();
     Ok(Json(
         paginate(items, &params)?.with_context("$metadata#apps"),
     ))
 }
 
+async fn get_app(
+    State(state): State<AppState>,
+    Path(app_id): Path<String>,
+) -> Result<Json<SovdApp>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    state
+        .entity_backend
+        .get_app(&app_id)
+        .map(Json)
+        .ok_or_else(|| not_found(&format!("App '{app_id}' not found")))
+}
+
+async fn get_app_capabilities(
+    State(state): State<AppState>,
+    Path(app_id): Path<String>,
+) -> Result<Json<SovdCapabilities>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    let caps = state
+        .entity_backend
+        .get_app_capabilities(&app_id)
+        .map_err(|ref e| diag_error(e))?;
+    Ok(Json(caps))
+}
+
+async fn list_app_data(
+    State(state): State<AppState>,
+    Path(app_id): Path<String>,
+) -> Result<Json<Collection<SovdDataCatalogEntry>>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    let items = state
+        .entity_backend
+        .list_app_data(&app_id)
+        .map_err(|ref e| diag_error(e))?;
+    Ok(Json(Collection::new(items).with_context("$metadata#data")))
+}
+
+async fn read_app_data(
+    State(state): State<AppState>,
+    Path((app_id, data_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    let value = state
+        .entity_backend
+        .read_app_data(&app_id, &data_id)
+        .await
+        .map_err(|ref e| diag_error(e))?;
+    Ok(Json(value))
+}
+
+async fn list_app_operations(
+    State(state): State<AppState>,
+    Path(app_id): Path<String>,
+) -> Result<Json<Collection<SovdOperation>>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    let items = state
+        .entity_backend
+        .list_app_operations(&app_id)
+        .map_err(|ref e| diag_error(e))?;
+    Ok(Json(
+        Collection::new(items).with_context("$metadata#operations"),
+    ))
+}
+
+async fn execute_app_operation(
+    State(state): State<AppState>,
+    Path((app_id, op_id)): Path<(String, String)>,
+    body: axum::body::Bytes,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    let params: Option<&[u8]> = if body.is_empty() { None } else { Some(&body) };
+    let result = state
+        .entity_backend
+        .execute_app_operation(&app_id, &op_id, params)
+        .await
+        .map_err(|ref e| diag_error(e))?;
+    Ok(Json(result))
+}
+
+// ── Funcs (ISO 17978-3 §4.2.3) ──────────────────────────────────────────
+
 async fn list_funcs(
+    State(state): State<AppState>,
     axum::extract::Query(params): axum::extract::Query<PaginationParams>,
 ) -> Result<Json<Collection<serde_json::Value>>, (StatusCode, Json<SovdErrorEnvelope>)> {
-    let items: Vec<serde_json::Value> = vec![];
+    let items = state.entity_backend.list_funcs();
     Ok(Json(
         paginate(items, &params)?.with_context("$metadata#funcs"),
     ))
+}
+
+async fn get_func(
+    State(state): State<AppState>,
+    Path(func_id): Path<String>,
+) -> Result<Json<SovdFunc>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    state
+        .entity_backend
+        .get_func(&func_id)
+        .map(Json)
+        .ok_or_else(|| not_found(&format!("Func '{func_id}' not found")))
+}
+
+async fn list_func_data(
+    State(state): State<AppState>,
+    Path(func_id): Path<String>,
+) -> Result<Json<Collection<SovdDataCatalogEntry>>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    let items = state
+        .entity_backend
+        .list_func_data(&func_id)
+        .map_err(|ref e| diag_error(e))?;
+    Ok(Json(Collection::new(items).with_context("$metadata#data")))
+}
+
+async fn read_func_data(
+    State(state): State<AppState>,
+    Path((func_id, data_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    let value = state
+        .entity_backend
+        .read_func_data(&func_id, &data_id)
+        .await
+        .map_err(|ref e| diag_error(e))?;
+    Ok(Json(value))
 }
 
 // ── Configuration (SOVD §7.8) ───────────────────────────────────────────
@@ -1937,8 +2201,14 @@ async fn write_config(
         .await
         .map_err(|ref e| diag_error(e))?;
     state.security.audit_log.record(
-        &caller.0, SovdAuditAction::WriteConfig,
-        &format!("component/{component_id}"), "configurations", "PUT", "success", None, None,
+        &caller.0,
+        SovdAuditAction::WriteConfig,
+        &format!("component/{component_id}"),
+        "configurations",
+        "PUT",
+        "success",
+        None,
+        None,
     );
     Ok(StatusCode::NO_CONTENT)
 }
@@ -2291,16 +2561,17 @@ mod tests {
     }
 
     fn test_state() -> AppState {
+        use crate::state::{DiagState, RuntimeState, SecurityState};
         use native_core::{AuditLog, ComponentRouter, DiagLog, FaultManager, LockManager};
         use native_health::HealthMonitor;
         use std::sync::Arc;
-        use crate::state::{DiagState, SecurityState, RuntimeState};
 
         let mock: Arc<dyn native_interfaces::ComponentBackend> = Arc::new(MockBackend);
         let router = Arc::new(ComponentRouter::new(vec![mock]));
 
         AppState {
-            backend: router,
+            backend: router.clone(),
+            entity_backend: router,
             diag: DiagState {
                 fault_manager: Arc::new(FaultManager::new()),
                 lock_manager: Arc::new(LockManager::new()),
@@ -2314,6 +2585,7 @@ mod tests {
                 health: Arc::new(HealthMonitor::new()),
                 execution_store: Arc::new(dashmap::DashMap::new()),
                 proximity_store: Arc::new(dashmap::DashMap::new()),
+                package_store: Arc::new(dashmap::DashMap::new()),
             },
         }
     }
@@ -2859,6 +3131,320 @@ mod tests {
         assert!(json["checks"]["health_monitor"].is_object());
     }
 
+    // ── W1.3 Apps/Funcs tests ─────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn list_apps_returns_empty_collection() {
+        let app = test_router();
+        let resp = app
+            .oneshot(Request::get("/sovd/v1/apps").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["@odata.count"], 0);
+        assert_eq!(json["@odata.context"], "$metadata#apps");
+    }
+
+    #[tokio::test]
+    async fn get_app_returns_404_for_unknown() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/apps/nonexistent")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn list_app_data_returns_empty_for_unknown() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/apps/someapp/data")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // EntityBackend defaults return Ok(vec![]) for list_app_data
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["@odata.count"], 0);
+    }
+
+    #[tokio::test]
+    async fn list_app_operations_returns_empty() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/apps/someapp/operations")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn get_app_capabilities_returns_404() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/apps/nonexistent/capabilities")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn read_app_data_returns_404() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/apps/someapp/data/unknown-data")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn list_funcs_returns_empty_collection() {
+        let app = test_router();
+        let resp = app
+            .oneshot(Request::get("/sovd/v1/funcs").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["@odata.count"], 0);
+        assert_eq!(json["@odata.context"], "$metadata#funcs");
+    }
+
+    #[tokio::test]
+    async fn get_func_returns_404_for_unknown() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/funcs/nonexistent")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn list_func_data_returns_empty() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/funcs/somefunc/data")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn read_func_data_returns_404() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/funcs/somefunc/data/unknown-data")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn apps_pagination_top_skip() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/apps?$top=5&$skip=0")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn funcs_pagination_top_skip() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/funcs?$top=5&$skip=0")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    // ── W1.4 Software-Package Lifecycle tests ───────────────────────────────
+
+    #[tokio::test]
+    async fn activate_software_package_returns_error() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::post("/sovd/v1/components/hpc/software-packages/pkg1/activate")
+                    .header("content-type", "application/json")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // Default backend returns RequestNotSupported → diag_error maps to 422 or 500
+        assert_ne!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn rollback_software_package_returns_error() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::post("/sovd/v1/components/hpc/software-packages/pkg1/rollback")
+                    .header("content-type", "application/json")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(resp.status(), StatusCode::OK);
+    }
+
+    // ── SOVD type serialization tests ───────────────────────────────────────
+
+    #[test]
+    fn sovd_app_serialization_roundtrip() {
+        let app = SovdApp {
+            id: "health-monitor".into(),
+            name: "Health Monitor".into(),
+            description: Some("System health monitoring app".into()),
+            version: "1.2.0".into(),
+            status: SovdAppStatus::Running,
+        };
+        let json = serde_json::to_value(&app).unwrap();
+        assert_eq!(json["id"], "health-monitor");
+        assert_eq!(json["status"], "running");
+        let deser: SovdApp = serde_json::from_value(json).unwrap();
+        assert_eq!(deser.id, "health-monitor");
+    }
+
+    #[test]
+    fn sovd_func_serialization_roundtrip() {
+        let func = SovdFunc {
+            id: "powertrain-status".into(),
+            name: "Powertrain Status".into(),
+            description: None,
+            source_components: vec!["engine".into(), "transmission".into()],
+        };
+        let json = serde_json::to_value(&func).unwrap();
+        assert_eq!(json["sourceComponents"].as_array().unwrap().len(), 2);
+        assert!(json.get("description").is_none());
+        let deser: SovdFunc = serde_json::from_value(json).unwrap();
+        assert_eq!(deser.source_components.len(), 2);
+    }
+
+    #[test]
+    fn sovd_software_package_extended_fields() {
+        let pkg = SovdSoftwarePackage {
+            id: "pkg-1".into(),
+            name: "ECU Firmware".into(),
+            version: "2.0.0".into(),
+            description: None,
+            status: SovdSoftwarePackageStatus::Activated,
+            previous_version: Some("1.9.0".into()),
+            progress: Some(100),
+            component_id: Some("hpc".into()),
+            updated_at: Some("2025-01-15T10:30:00Z".into()),
+            error: None,
+        };
+        let json = serde_json::to_value(&pkg).unwrap();
+        assert_eq!(json["status"], "activated");
+        assert_eq!(json["previousVersion"], "1.9.0");
+        assert_eq!(json["progress"], 100);
+        assert_eq!(json["componentId"], "hpc");
+        assert!(json.get("error").is_none());
+    }
+
+    #[test]
+    fn sovd_software_package_manifest_roundtrip() {
+        let manifest = SovdSoftwarePackageManifest {
+            name: "Firmware Update".into(),
+            version: "3.0.0".into(),
+            description: Some("Major firmware update".into()),
+            download_url: Some("https://ota.example.com/pkg/3.0.0".into()),
+            checksum: Some("abcdef1234567890".into()),
+            size: Some(1_048_576),
+        };
+        let json = serde_json::to_value(&manifest).unwrap();
+        assert_eq!(json["downloadUrl"], "https://ota.example.com/pkg/3.0.0");
+        assert_eq!(json["size"], 1_048_576);
+        let deser: SovdSoftwarePackageManifest = serde_json::from_value(json).unwrap();
+        assert_eq!(deser.version, "3.0.0");
+    }
+
+    #[test]
+    fn sovd_software_package_status_variants() {
+        for (variant, expected) in [
+            (SovdSoftwarePackageStatus::Available, "available"),
+            (SovdSoftwarePackageStatus::Downloading, "downloading"),
+            (SovdSoftwarePackageStatus::Downloaded, "downloaded"),
+            (SovdSoftwarePackageStatus::Installing, "installing"),
+            (SovdSoftwarePackageStatus::Installed, "installed"),
+            (SovdSoftwarePackageStatus::Activated, "activated"),
+            (SovdSoftwarePackageStatus::RollingBack, "rollingBack"),
+            (SovdSoftwarePackageStatus::Failed, "failed"),
+        ] {
+            let json = serde_json::to_value(variant).unwrap();
+            assert_eq!(json.as_str().unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn sovd_app_status_variants() {
+        for (variant, expected) in [
+            (SovdAppStatus::Running, "running"),
+            (SovdAppStatus::Stopped, "stopped"),
+            (SovdAppStatus::Error, "error"),
+        ] {
+            let json = serde_json::to_value(variant).unwrap();
+            assert_eq!(json.as_str().unwrap(), expected);
+        }
+    }
+
     #[tokio::test]
     async fn logs_returns_empty_initially() {
         let app = test_router();
@@ -2968,11 +3554,7 @@ mod tests {
     async fn apps_returns_empty_collection() {
         let app = test_router();
         let resp = app
-            .oneshot(
-                Request::get("/sovd/v1/apps")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::get("/sovd/v1/apps").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -2988,11 +3570,7 @@ mod tests {
     async fn funcs_returns_empty_collection() {
         let app = test_router();
         let resp = app
-            .oneshot(
-                Request::get("/sovd/v1/funcs")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::get("/sovd/v1/funcs").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -3067,11 +3645,7 @@ mod tests {
     async fn audit_endpoint_returns_empty_initially() {
         let app = test_router();
         let resp = app
-            .oneshot(
-                Request::get("/sovd/v1/audit")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::get("/sovd/v1/audit").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -3102,11 +3676,7 @@ mod tests {
 
         // Check audit log has an entry
         let resp = app
-            .oneshot(
-                Request::get("/sovd/v1/audit")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::get("/sovd/v1/audit").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -3115,7 +3685,10 @@ mod tests {
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let entries = json["value"].as_array().unwrap();
-        assert!(!entries.is_empty(), "Audit log should have at least one entry");
+        assert!(
+            !entries.is_empty(),
+            "Audit log should have at least one entry"
+        );
         let last = entries.last().unwrap();
         assert_eq!(last["action"], "writeData");
         assert!(last["target"].as_str().unwrap().contains("hpc"));
@@ -3270,11 +3843,7 @@ mod tests {
         let disconnect_status = resp.status();
 
         let resp = app
-            .oneshot(
-                Request::get("/sovd/v1/audit")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::get("/sovd/v1/audit").body(Body::empty()).unwrap())
             .await
             .unwrap();
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
@@ -3282,8 +3851,16 @@ mod tests {
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let entries = json["value"].as_array().unwrap();
-        assert_eq!(connect_status, StatusCode::NO_CONTENT, "connect should succeed");
-        assert_eq!(disconnect_status, StatusCode::NO_CONTENT, "disconnect should succeed");
+        assert_eq!(
+            connect_status,
+            StatusCode::NO_CONTENT,
+            "connect should succeed"
+        );
+        assert_eq!(
+            disconnect_status,
+            StatusCode::NO_CONTENT,
+            "disconnect should succeed"
+        );
         let actions: Vec<&str> = entries
             .iter()
             .filter_map(|e| e["action"].as_str())
@@ -3536,11 +4113,12 @@ mod mock_backend_tests {
     }
 
     fn mock_state() -> AppState {
-        use crate::state::{DiagState, SecurityState, RuntimeState};
+        use crate::state::{DiagState, RuntimeState, SecurityState};
         let backend: Arc<dyn ComponentBackend> = Arc::new(MockCdaBackend);
         let router = Arc::new(ComponentRouter::new(vec![backend]));
         AppState {
-            backend: router,
+            backend: router.clone(),
+            entity_backend: router,
             diag: DiagState {
                 fault_manager: Arc::new(FaultManager::new()),
                 lock_manager: Arc::new(LockManager::new()),
@@ -3554,6 +4132,7 @@ mod mock_backend_tests {
                 health: Arc::new(HealthMonitor::new()),
                 execution_store: Arc::new(dashmap::DashMap::new()),
                 proximity_store: Arc::new(dashmap::DashMap::new()),
+                package_store: Arc::new(dashmap::DashMap::new()),
             },
         }
     }

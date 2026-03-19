@@ -338,9 +338,36 @@ mod tests {
     #[test]
     fn filter_by_outcome() {
         let log = make_log();
-        log.record("u", SovdAuditAction::ReadData, "c/hpc", "data", "GET", "success", None, None);
-        log.record("u", SovdAuditAction::WriteData, "c/hpc", "data", "PUT", "denied", None, None);
-        log.record("u", SovdAuditAction::ReadData, "c/hpc", "data", "GET", "error", None, None);
+        log.record(
+            "u",
+            SovdAuditAction::ReadData,
+            "c/hpc",
+            "data",
+            "GET",
+            "success",
+            None,
+            None,
+        );
+        log.record(
+            "u",
+            SovdAuditAction::WriteData,
+            "c/hpc",
+            "data",
+            "PUT",
+            "denied",
+            None,
+            None,
+        );
+        log.record(
+            "u",
+            SovdAuditAction::ReadData,
+            "c/hpc",
+            "data",
+            "GET",
+            "error",
+            None,
+            None,
+        );
 
         let filter = AuditFilter {
             outcome: Some("success".into()),

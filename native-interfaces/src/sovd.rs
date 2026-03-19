@@ -462,9 +462,48 @@ pub struct SovdComponentConfig {
     pub parameters: serde_json::Value,
 }
 
+// ── Apps (ISO 17978-3 §4.2.3) ─────────────────────────────────────────────
+
+/// SOVD application entity — a diagnostic application hosted on the HPC
+/// (e.g. "SOTA Manager", "Flash Master", "Health Monitor").
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SovdApp {
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub version: String,
+    pub status: SovdAppStatus,
+}
+
+/// Application lifecycle status
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SovdAppStatus {
+    Running,
+    Stopped,
+    Error,
+}
+
+// ── Funcs (ISO 17978-3 §4.2.3) ────────────────────────────────────────────
+
+/// SOVD function entity — a cross-component diagnostic function that
+/// aggregates data from multiple sources (e.g. "powertrain-status",
+/// "battery-health").
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SovdFunc {
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Component IDs this function aggregates
+    #[serde(rename = "sourceComponents")]
+    pub source_components: Vec<String>,
+}
+
 // ── Software Packages (SOVD Standard §5.5.10) ────────────────────────────
 
-/// SOVD software package resource
+/// SOVD software package resource with full lifecycle fields
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SovdSoftwarePackage {
     pub id: String,
@@ -473,15 +512,53 @@ pub struct SovdSoftwarePackage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     pub status: SovdSoftwarePackageStatus,
+    /// Previous version (for rollback)
+    #[serde(skip_serializing_if = "Option::is_none", rename = "previousVersion")]
+    pub previous_version: Option<String>,
+    /// Installation progress (0–100)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress: Option<u8>,
+    /// Target component ID
+    #[serde(skip_serializing_if = "Option::is_none", rename = "componentId")]
+    pub component_id: Option<String>,
+    /// Timestamp of last status change
+    #[serde(skip_serializing_if = "Option::is_none", rename = "updatedAt")]
+    pub updated_at: Option<String>,
+    /// Error detail (when status == Failed)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
+/// Software package lifecycle states
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SovdSoftwarePackageStatus {
     Available,
+    Downloading,
+    Downloaded,
     Installing,
     Installed,
+    Activated,
+    RollingBack,
     Failed,
+}
+
+/// Software package upload manifest (metadata for OTA)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SovdSoftwarePackageManifest {
+    pub name: String,
+    pub version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Download URL (for pull-based OTA)
+    #[serde(skip_serializing_if = "Option::is_none", rename = "downloadUrl")]
+    pub download_url: Option<String>,
+    /// SHA-256 checksum of the package
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<String>,
+    /// Package size in bytes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
 }
 
 // ── Bulk Data (SOVD Standard §7.5.3) ─────────────────────────────────────

@@ -86,20 +86,18 @@ impl DltLayer {
 
         let writer = match &config.daemon_socket {
             #[cfg(unix)]
-            Some(path) => {
-                match std::os::unix::net::UnixDatagram::unbound() {
-                    Ok(sock) => {
-                        if sock.connect(path).is_ok() {
-                            tracing::info!(path = %path, "DLT: connected to DLTDaemon socket");
-                            DltWriter::UnixSocket(std::sync::Mutex::new(sock))
-                        } else {
-                            tracing::warn!(path = %path, "DLT: failed to connect to daemon socket, falling back to stderr");
-                            DltWriter::Stderr
-                        }
+            Some(path) => match std::os::unix::net::UnixDatagram::unbound() {
+                Ok(sock) => {
+                    if sock.connect(path).is_ok() {
+                        tracing::info!(path = %path, "DLT: connected to DLTDaemon socket");
+                        DltWriter::UnixSocket(std::sync::Mutex::new(sock))
+                    } else {
+                        tracing::warn!(path = %path, "DLT: failed to connect to daemon socket, falling back to stderr");
+                        DltWriter::Stderr
                     }
-                    Err(_) => DltWriter::Stderr,
                 }
-            }
+                Err(_) => DltWriter::Stderr,
+            },
             #[cfg(not(unix))]
             Some(_) => {
                 tracing::warn!("DLT: Unix sockets not available on this platform, using stderr");

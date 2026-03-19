@@ -24,9 +24,9 @@ use tracing::{debug, info, warn};
 
 use native_interfaces::{
     sovd::{
-        Collection, SovdBulkDataCategory, SovdBulkDataItem, SovdBulkReadRequest,
-        SovdBulkWriteItem, SovdCapabilities, SovdComponent, SovdComponentConfig,
-        SovdConnectionState, SovdDataCatalogEntry, SovdFault, SovdGroup, SovdMode, SovdOperation,
+        Collection, SovdBulkDataCategory, SovdBulkDataItem, SovdBulkReadRequest, SovdBulkWriteItem,
+        SovdCapabilities, SovdComponent, SovdComponentConfig, SovdConnectionState,
+        SovdDataCatalogEntry, SovdFault, SovdGroup, SovdMode, SovdOperation,
     },
     ComponentBackend, DiagServiceError,
 };

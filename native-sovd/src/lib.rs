@@ -34,8 +34,8 @@ pub mod oem_mbds;
 pub use auth::AuthConfig;
 pub use dlt::{DltConfig, DltLayer};
 pub use mdns::{MdnsConfig, MdnsHandle};
-pub use oem_sample::SampleOemProfile;
 #[cfg(has_oem_mbds)]
 pub use oem_mbds::{MbdsProfile, MbdsProfileConfig};
+pub use oem_sample::SampleOemProfile;
 pub use routes::build_router;
 pub use state::{AppState, DiagState, RuntimeState, SecurityState};

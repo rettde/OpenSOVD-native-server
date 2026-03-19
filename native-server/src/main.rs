@@ -26,7 +26,9 @@ use native_core::{
 };
 use native_health::HealthMonitor;
 use native_interfaces::ComponentBackend;
-use native_sovd::{build_router, AppState, AuthConfig, DltConfig, DltLayer, MdnsConfig, MdnsHandle};
+use native_sovd::{
+    build_router, AppState, AuthConfig, DltConfig, DltLayer, MdnsConfig, MdnsHandle,
+};
 
 use native_comm_someip::{SomeIpConfig, SomeIpRuntime};
 
@@ -113,8 +115,12 @@ impl AppConfig {
 
         // TLS: cert and key must both be present or both absent
         match (&self.server.cert_path, &self.server.key_path) {
-            (Some(_), None) => errors.push("server.cert_path is set but server.key_path is missing".into()),
-            (None, Some(_)) => errors.push("server.key_path is set but server.cert_path is missing".into()),
+            (Some(_), None) => {
+                errors.push("server.cert_path is set but server.key_path is missing".into())
+            }
+            (None, Some(_)) => {
+                errors.push("server.key_path is set but server.cert_path is missing".into())
+            }
             (Some(cert), Some(key)) => {
                 if !std::path::Path::new(cert).exists() {
                     errors.push(format!("TLS cert file not found: {cert}"));
@@ -148,7 +154,8 @@ impl AppConfig {
 
         // Backends: validate URLs look reasonable
         for (i, backend) in self.backends.iter().enumerate() {
-            if !backend.base_url.starts_with("http://") && !backend.base_url.starts_with("https://") {
+            if !backend.base_url.starts_with("http://") && !backend.base_url.starts_with("https://")
+            {
                 errors.push(format!(
                     "backends[{i}] '{}': base_url must start with http:// or https://, got '{}'",
                     backend.name, backend.base_url
@@ -296,7 +303,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Audit log enabled (in-memory, {} max entries)", 10_000);
 
     let state = AppState {
-        backend: router,
+        backend: router.clone(),
+        entity_backend: router,
         diag: native_sovd::DiagState {
             fault_manager,
             lock_manager,
@@ -310,6 +318,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             health,
             execution_store: Arc::new(DashMap::new()),
             proximity_store: Arc::new(DashMap::new()),
+            package_store: Arc::new(DashMap::new()),
         },
     };
     let app = build_router(state, config.auth);
@@ -378,8 +387,8 @@ async fn build_mtls_config(
 
     // Read server cert chain
     let cert_pem = tokio::fs::read(cert_path).await?;
-    let certs: Vec<_> = rustls_pemfile::certs(&mut BufReader::new(&cert_pem[..]))
-        .collect::<Result<Vec<_>, _>>()?;
+    let certs: Vec<_> =
+        rustls_pemfile::certs(&mut BufReader::new(&cert_pem[..])).collect::<Result<Vec<_>, _>>()?;
 
     // Read server private key
     let key_pem = tokio::fs::read(key_path).await?;
@@ -404,7 +413,9 @@ async fn build_mtls_config(
 
     server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
 
-    Ok(axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(server_config)))
+    Ok(axum_server::tls_rustls::RustlsConfig::from_config(
+        Arc::new(server_config),
+    ))
 }
 
 async fn shutdown_signal() {

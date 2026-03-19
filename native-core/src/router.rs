@@ -20,11 +20,11 @@ use tracing::debug;
 
 use native_interfaces::{
     sovd::{
-        SovdBulkDataCategory, SovdBulkDataItem, SovdBulkWriteItem, SovdCapabilities,
-        SovdComponent, SovdComponentConfig, SovdDataCatalogEntry, SovdFault, SovdGroup, SovdMode,
-        SovdOperation, SovdSoftwarePackage,
+        SovdBulkDataCategory, SovdBulkDataItem, SovdBulkWriteItem, SovdCapabilities, SovdComponent,
+        SovdComponentConfig, SovdDataCatalogEntry, SovdFault, SovdGroup, SovdMode, SovdOperation,
+        SovdSoftwarePackage,
     },
-    ComponentBackend, DiagServiceError,
+    ComponentBackend, DiagServiceError, EntityBackend,
 };
 
 /// Gateway router that dispatches SOVD requests to the correct backend.
@@ -260,6 +260,35 @@ impl ComponentBackend for ComponentRouter {
             .await
     }
 
+    async fn activate_software_package(
+        &self,
+        component_id: &str,
+        package_id: &str,
+    ) -> Result<SovdSoftwarePackage, DiagServiceError> {
+        self.backend_for(component_id)?
+            .activate_software_package(component_id, package_id)
+            .await
+    }
+
+    async fn rollback_software_package(
+        &self,
+        component_id: &str,
+        package_id: &str,
+    ) -> Result<SovdSoftwarePackage, DiagServiceError> {
+        self.backend_for(component_id)?
+            .rollback_software_package(component_id, package_id)
+            .await
+    }
+
+    fn get_software_package_status(
+        &self,
+        component_id: &str,
+        package_id: &str,
+    ) -> Result<SovdSoftwarePackage, DiagServiceError> {
+        self.backend_for(component_id)?
+            .get_software_package_status(component_id, package_id)
+    }
+
     // ── Extended diagnostics — dispatch to owning backend ───────────────────
 
     async fn io_control(
@@ -332,6 +361,14 @@ impl ComponentBackend for ComponentRouter {
             .flat_map(|b| b.active_keepalives())
             .collect()
     }
+}
+
+// ── EntityBackend — default empty impl (no apps/funcs in component backends) ─
+
+#[async_trait]
+impl EntityBackend for ComponentRouter {
+    // All methods use trait defaults (empty collections / not-found).
+    // Override when entity-aware backends are registered.
 }
 
 #[cfg(test)]

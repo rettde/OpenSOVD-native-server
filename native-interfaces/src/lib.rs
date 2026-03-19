@@ -14,10 +14,10 @@ pub mod oem;
 pub mod sovd;
 
 // Re-export key types at crate root
-pub use backend::ComponentBackend;
-pub use oem::{DefaultProfile, OemProfile};
+pub use backend::{ComponentBackend, EntityBackend};
 pub use diag::{
     service_ids, DiagTransport, DiagnosticSession, EcuConnectionState, ServicePayload,
     TesterPresentMode, TesterPresentType, UdsResponse,
 };
 pub use error::{ConnectionError, DiagServiceError, DoipGatewaySetupError, SomeIpError};
+pub use oem::{DefaultProfile, OemProfile};

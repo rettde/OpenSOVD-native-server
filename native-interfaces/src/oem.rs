@@ -252,7 +252,9 @@ pub trait AuthzPolicy: Send + Sync {
 /// ```
 ///
 /// Injected as `Arc<dyn OemProfile>` into `AppState`.
-pub trait OemProfile: AuthPolicy + AuthzPolicy + EntityIdPolicy + DiscoveryPolicy + CdfPolicy + Send + Sync {
+pub trait OemProfile:
+    AuthPolicy + AuthzPolicy + EntityIdPolicy + DiscoveryPolicy + CdfPolicy + Send + Sync
+{
     /// Human-readable profile name for logging and diagnostics.
     fn name(&self) -> &'static str;
 

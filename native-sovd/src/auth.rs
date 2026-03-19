@@ -146,10 +146,7 @@ fn enforce_claims(
         claim_map.insert("vin".to_owned(), serde_json::Value::String(vin.clone()));
     }
     if let Some(ref scope) = claims.scope {
-        claim_map.insert(
-            "scope".to_owned(),
-            serde_json::Value::String(scope.clone()),
-        );
+        claim_map.insert("scope".to_owned(), serde_json::Value::String(scope.clone()));
     }
     auth_policy
         .validate_claims(&claim_map, path)
@@ -221,7 +218,12 @@ fn build_authz_context(
         // /sovd/v1/components/{id}/{resource}/{res_id} [or deeper]
         [entity_collection, id, res, res_id, ..] => {
             let et = entity_type_from_collection(entity_collection);
-            (et, Some(id.to_string()), res.to_string(), Some(res_id.to_string()))
+            (
+                et,
+                Some(id.to_string()),
+                res.to_string(),
+                Some(res_id.to_string()),
+            )
         }
     };
 
@@ -831,7 +833,13 @@ mod tests {
 
     #[test]
     fn authz_context_faults_delete() {
-        let ctx = build_authz_context("DELETE", "/sovd/v1/components/brake/faults", "admin", &[], &[]);
+        let ctx = build_authz_context(
+            "DELETE",
+            "/sovd/v1/components/brake/faults",
+            "admin",
+            &[],
+            &[],
+        );
         assert_eq!(ctx.method, "DELETE");
         assert_eq!(ctx.entity_type, "component");
         assert_eq!(ctx.entity_id.as_deref(), Some("brake"));
@@ -891,7 +899,13 @@ mod tests {
 
     #[test]
     fn authz_context_x_uds_prefix() {
-        let ctx = build_authz_context("POST", "/sovd/v1/x-uds/components/hpc/connect", "u", &[], &[]);
+        let ctx = build_authz_context(
+            "POST",
+            "/sovd/v1/x-uds/components/hpc/connect",
+            "u",
+            &[],
+            &[],
+        );
         assert_eq!(ctx.entity_type, "component");
         assert_eq!(ctx.entity_id.as_deref(), Some("hpc"));
         assert_eq!(ctx.resource, "connect");

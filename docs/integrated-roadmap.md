@@ -183,12 +183,12 @@
 ```
                     ARCH GATES              FEATURES              ENTERPRISE
                     ──────────              ────────              ──────────
-Wave 1  ┌─ A1.1 Graceful shutdown    W1.1 AuthZ ✅            E1.1 Audit hash chain
-(now)   │  A1.2 Health probes        W1.2 Audit Trail ✅      E1.2 JSON logging
-        │  A1.3 Body size limit      W1.3 Apps/Funcs ⏳       E1.3 RED metrics
-        │  A1.4 Config validation    W1.4 SW Packages         T1.1 Contract test
-        │  A1.5 AppState sub-groups
-        └  A1.6 Error catalog
+Wave 1  ┌─ A1.1 Graceful shutdown ✅  W1.1 AuthZ ✅            E1.1 Audit hash chain
+(done)  │  A1.2 Health probes ✅      W1.2 Audit Trail ✅      E1.2 JSON logging
+        │  A1.3 Body size limit ✅    W1.3 Apps/Funcs ✅       E1.3 RED metrics
+        │  A1.4 Config validation ✅  W1.4 SW Packages ✅      T1.1 Contract test
+        │  A1.5 AppState sub-groups ✅
+        └  A1.6 Error catalog ✅
         
 Wave 2  ┌─ A2.1 StorageBackend       W2.1 KPI/system-info     E2.1 TLS hot-reload
         │  A2.2 Backend trait diet    W2.2 Historical storage  E2.2 Deployment pkg
@@ -230,18 +230,19 @@ These are the critical moments where a refactoring decision **must** be made to 
 
 ---
 
-## Current Status (as of Wave 1 in progress)
+## Current Status (v0.6.0 — Wave 1 complete)
 
 | Item | Status | Tests |
 |------|--------|-------|
 | W1.1 Fine-Grained AuthZ | ✅ Complete | Covered |
-| W1.2 Diagnostic Audit Trail | ✅ Complete | 208 tests, clippy clean |
-| A1.1–A1.6 Arch Gate | ✅ Complete | 210 tests, clippy clean |
-| E1.1–E1.3 Hardening | Pending | — |
-| W1.3 Apps/Funcs | ⏳ **Next** (unblocked by A1.5) | — |
-| W1.4 SW Packages | Pending (unblocked by A1.5) | — |
+| W1.2 Diagnostic Audit Trail | ✅ Complete | Covered |
+| A1.1–A1.6 Arch Gate | ✅ Complete | Covered |
+| W1.3 Apps/Funcs Entities | ✅ Complete | 14 new tests |
+| W1.4 SW Package Lifecycle | ✅ Complete | 6 new tests |
+| E1.1–E1.3 Hardening | Deferred to Wave 2 | — |
+| **Total** | **230 tests, clippy clean** | |
 
-**Immediate next step:** W1.3 Apps/Funcs entities, then W1.4 SW Packages.
+**Immediate next step:** Wave 2 — Data Infrastructure & Observability.
 
 **Wave 4 note:** Added as forward-looking track for AI-ready diagnostic data,
 aligning with Chen, Mei-Yen's semantic layer initiative. No blocking dependencies

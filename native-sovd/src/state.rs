@@ -19,8 +19,9 @@ use dashmap::DashMap;
 use native_core::{AuditLog, DiagLog, FaultManager, LockManager};
 use native_health::HealthMonitor;
 use native_interfaces::oem::OemProfile;
+use native_interfaces::sovd::SovdSoftwarePackage;
 use native_interfaces::sovd::{SovdOperationExecution, SovdProximityChallenge};
-use native_interfaces::ComponentBackend;
+use native_interfaces::{ComponentBackend, EntityBackend};
 
 // ── Sub-state: Diagnostics ──────────────────────────────────────────────────
 
@@ -57,6 +58,8 @@ pub struct RuntimeState {
     pub execution_store: Arc<DashMap<String, SovdOperationExecution>>,
     /// Proximity challenge store: challengeId → SovdProximityChallenge
     pub proximity_store: Arc<DashMap<String, SovdProximityChallenge>>,
+    /// Software package lifecycle store: "{component_id}/{package_id}" → SovdSoftwarePackage
+    pub package_store: Arc<DashMap<String, SovdSoftwarePackage>>,
 }
 
 // ── Top-level AppState ──────────────────────────────────────────────────────
@@ -70,6 +73,8 @@ pub struct RuntimeState {
 pub struct AppState {
     /// Gateway backend — dispatches to CDA (HTTP) or local UDS/DoIP
     pub backend: Arc<dyn ComponentBackend>,
+    /// Entity backend — apps and funcs (ISO 17978-3 §4.2.3)
+    pub entity_backend: Arc<dyn EntityBackend>,
     /// Diagnostic state: faults, locks, diagnostic logs
     pub diag: DiagState,
     /// Security state: OEM profile, audit trail
