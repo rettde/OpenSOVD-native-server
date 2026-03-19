@@ -17,6 +17,7 @@
 )]
 
 pub mod auth;
+pub mod bridge;
 pub mod dlt;
 pub mod mdns;
 pub mod oem_sample;
@@ -33,6 +34,7 @@ pub mod state;
 pub mod oem_mbds;
 
 pub use auth::AuthConfig;
+pub use bridge::{BridgeState, InMemoryBridgeTransport};
 pub use dlt::{DltConfig, DltTextLayer};
 pub use mdns::{MdnsConfig, MdnsHandle};
 #[cfg(has_oem_mbds)]

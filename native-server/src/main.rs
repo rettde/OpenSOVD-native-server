@@ -26,8 +26,11 @@ use native_core::{
 };
 use native_health::HealthMonitor;
 use native_interfaces::ComponentBackend;
+use native_interfaces::bridge::BridgeConfig;
+use native_interfaces::tenant::MultiTenantConfig;
 use native_sovd::{
-    build_router, AppState, AuthConfig, DltConfig, DltTextLayer, MdnsConfig, MdnsHandle,
+    build_router, AppState, AuthConfig, BridgeState, DltConfig, DltTextLayer, InMemoryBridgeTransport,
+    MdnsConfig, MdnsHandle,
 };
 
 use native_comm_someip::{SomeIpConfig, SomeIpRuntime};
@@ -52,6 +55,12 @@ struct AppConfig {
     dlt: DltConfig,
     #[serde(default)]
     rate_limit: native_sovd::RateLimitConfig,
+    /// Cloud bridge configuration (Wave 3, A3.1)
+    #[serde(default)]
+    bridge: BridgeConfig,
+    /// Multi-tenant configuration (Wave 3, A3.2)
+    #[serde(default)]
+    tenant: MultiTenantConfig,
 
     // ── Backend configuration ───────────────────────────────────────────
     /// External SOVD backends (CDA instances, native SOVD endpoints)
@@ -391,7 +400,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             package_store: Arc::new(DashMap::new()),
         },
     };
-    let app = build_router(state, config.auth);
+    // ── Bridge routes (Wave 3, W3.1) ─────────────────────────────────
+    let app = if config.bridge.enabled {
+        let bridge_transport = Arc::new(InMemoryBridgeTransport::new());
+        let bridge_state = BridgeState {
+            transport: bridge_transport,
+            config: config.bridge.clone(),
+        };
+        info!("Cloud bridge mode enabled");
+        let bridge_router = native_sovd::bridge::build_bridge_router(bridge_state);
+        build_router(state, config.auth)
+            .nest("/sovd/v1/x-bridge", bridge_router)
+    } else {
+        build_router(state, config.auth)
+    };
+
+    if config.tenant.enabled {
+        info!(
+            tenants = config.tenant.tenants.len(),
+            "Multi-tenant mode enabled"
+        );
+    }
 
     // ── Start server ────────────────────────────────────────────────────
     let bind_addr = format!("{}:{}", config.server.host, config.server.port);

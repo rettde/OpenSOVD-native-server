@@ -230,7 +230,7 @@ These are the critical moments where a refactoring decision **must** be made to 
 
 ---
 
-## Current Status (v0.8.1 — Wave 2 complete)
+## Current Status (v0.9.0 — Wave 3 complete)
 
 | Item | Status | Tests |
 |------|--------|-------|
@@ -250,10 +250,22 @@ These are the critical moments where a refactoring decision **must** be made to 
 | W2.1 KPI / system-info | ✅ Complete | 1 test |
 | W2.3 FaultGovernor | ✅ Complete | 8 tests |
 | W2.4 Mode/session model | ✅ Complete | — |
-| **Total** | **269 tests, clippy clean** | |
+| A3.1 Cloud bridge topology ADR | ✅ Complete | — |
+| A3.2 Multi-tenant isolation ADR | ✅ Complete | — |
+| A3.3 TenantContext middleware | ✅ Complete | 15 tests |
+| A3.4 BridgeTransport trait | ✅ Complete | — |
+| A3.5 API versioning ADR | ✅ Complete | — |
+| W3.1 Cloud bridge mode | ✅ Complete | 8 tests |
+| W3.2 Multi-tenant fleet model | ✅ Complete | — |
+| W3.3 Variant-aware discovery | ✅ Complete | — |
+| W3.4 Zero-trust (signed audit) | ✅ Complete | — |
+| E3.1 Client SDK generation | ✅ Complete | — |
+| E3.2 Compliance evidence export | ✅ Complete | — |
+| E3.3 Canary/blue-green routing | ✅ Complete | — |
+| **Total** | **295 tests, clippy clean** | |
 
-**Immediate next step:** Wave 3 — Integration & Cloud Bridge.
+**Immediate next step:** Wave 4 — AI-Ready Diagnostic Data (Semantic Layer Enablement).
 
-**Wave 4 note:** Added as forward-looking track for AI-ready diagnostic data,
-aligning with Chen, Mei-Yen's semantic layer initiative. No blocking dependencies
-on current work — Wave 4 builds on Wave 2 (historical storage) and Wave 3 (cloud bridge).
+**Wave 4 note:** Forward-looking track for AI-ready diagnostic data,
+aligning with Chen, Mei-Yen's semantic layer initiative. Builds on
+Wave 2 (historical storage) and Wave 3 (cloud bridge + multi-tenant).

@@ -8,15 +8,18 @@
 #![deny(warnings)]
 
 pub mod backend;
+pub mod bridge;
 pub mod diag;
 pub mod error;
 pub mod oem;
 pub mod secrets;
 pub mod sovd;
 pub mod storage;
+pub mod tenant;
 
 // Re-export key types at crate root
 pub use backend::{ComponentBackend, EntityBackend, ExtendedDiagBackend};
+pub use bridge::{BridgeError, BridgeTransport};
 pub use diag::{
     service_ids, DiagTransport, DiagnosticSession, EcuConnectionState, ServicePayload,
     TesterPresentMode, TesterPresentType, UdsResponse,
@@ -25,3 +28,4 @@ pub use error::{ConnectionError, DiagServiceError, DoipGatewaySetupError, SomeIp
 pub use oem::{DefaultProfile, OemProfile};
 pub use secrets::{EnvSecretProvider, SecretProvider, StaticSecretProvider};
 pub use storage::{InMemoryStorage, StorageBackend};
+pub use tenant::{MultiTenantConfig, TenantContext, TenantIsolation};

@@ -26,6 +26,7 @@ use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use native_core::AuditLog;
 use native_interfaces::oem::{AuthPolicy, AuthzContext, AuthzDecision, AuthzPolicy, OemProfile};
 use native_interfaces::sovd::{SovdAuditAction, SovdErrorEnvelope};
+use native_interfaces::tenant::TenantContext;
 use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq;
 use tracing::{debug, warn};
@@ -125,6 +126,9 @@ pub struct Claims {
     /// OAuth2 scope claim (MBDS S-SOVD §6.2)
     #[serde(default, alias = "scp")]
     pub scope: Option<String>,
+    /// Tenant identifier for multi-tenant deployments (Wave 3, A3.3)
+    #[serde(default)]
+    pub tenant_id: Option<String>,
 }
 
 /// Enforce OEM-specific claim rules via the active AuthPolicy.
@@ -360,6 +364,10 @@ pub async fn auth_middleware(
                     request
                         .extensions_mut()
                         .insert(AuthenticatedClient("api-key-client".to_owned()));
+                    // Inject default tenant context for API key auth (Wave 3, A3.3)
+                    request
+                        .extensions_mut()
+                        .insert(TenantContext::default());
                     return Ok(next.run(request).await);
                 }
             }
@@ -507,6 +515,13 @@ async fn validate_jwt(
                 Some("jwt"),
                 None,
             );
+            // Inject tenant context from JWT claims (Wave 3, A3.3)
+            let tenant_ctx = token_data
+                .claims
+                .tenant_id
+                .as_deref()
+                .map_or_else(TenantContext::default, TenantContext::new);
+            request.extensions_mut().insert(tenant_ctx);
             // Inject client identity from JWT sub claim (SOVD §7.4)
             request
                 .extensions_mut()
@@ -752,6 +767,13 @@ async fn validate_oidc_jwt(
                 Some("oidc"),
                 None,
             );
+            // Inject tenant context from OIDC JWT claims (Wave 3, A3.3)
+            let tenant_ctx = token_data
+                .claims
+                .tenant_id
+                .as_deref()
+                .map_or_else(TenantContext::default, TenantContext::new);
+            request.extensions_mut().insert(tenant_ctx);
             request
                 .extensions_mut()
                 .insert(AuthenticatedClient(token_data.claims.sub));
@@ -1016,6 +1038,7 @@ mod tests {
             roles: vec![],
             vin: None,
             scope: Some("read write admin".into()),
+            tenant_id: None,
         };
         assert_eq!(extract_scopes(&claims), vec!["read", "write", "admin"]);
     }
@@ -1030,7 +1053,49 @@ mod tests {
             roles: vec![],
             vin: None,
             scope: None,
+            tenant_id: None,
         };
         assert!(extract_scopes(&claims).is_empty());
+    }
+
+    // ── tenant context injection tests ──────────────────────────────────
+
+    #[test]
+    fn tenant_context_from_jwt_claim() {
+        let claims = Claims {
+            sub: "user1".into(),
+            exp: 0,
+            iat: 0,
+            iss: None,
+            roles: vec![],
+            vin: None,
+            scope: None,
+            tenant_id: Some("workshop-a".into()),
+        };
+        let ctx = claims
+            .tenant_id
+            .as_deref()
+            .map_or_else(TenantContext::default, TenantContext::new);
+        assert_eq!(ctx.tenant_id, "workshop-a");
+        assert!(!ctx.is_default());
+    }
+
+    #[test]
+    fn tenant_context_default_when_no_claim() {
+        let claims = Claims {
+            sub: "user1".into(),
+            exp: 0,
+            iat: 0,
+            iss: None,
+            roles: vec![],
+            vin: None,
+            scope: None,
+            tenant_id: None,
+        };
+        let ctx = claims
+            .tenant_id
+            .as_deref()
+            .map_or_else(TenantContext::default, TenantContext::new);
+        assert!(ctx.is_default());
     }
 }

@@ -7,6 +7,53 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.9.0] — 2026-03-20
+
+### Wave 3 — Cloud Bridge, Multi-Tenant, Variant-Aware, Zero-Trust
+
+### Architecture Decisions
+- **A3.1 Cloud bridge topology** — ADR: feature-gated same-binary approach
+  (`docs/adr/A3.1-cloud-bridge-topology.md`)
+- **A3.2 Multi-tenant data isolation** — ADR: policy + namespace isolation
+  (`docs/adr/A3.2-multi-tenant-isolation.md`)
+- **A3.3 TenantContext middleware** — `TenantContext` struct, `TenantIsolation`
+  enum, `MultiTenantConfig` in `native-interfaces/src/tenant.rs`. JWT `tenant_id`
+  claim extraction in auth middleware. `TenantId` extractor in routes.
+- **A3.4 BridgeTransport trait** — async trait for cloud-to-vehicle communication
+  with `BridgeSession`, `BridgeError`, `BridgeConfig` (`native-interfaces/src/bridge.rs`)
+- **A3.5 API versioning contract** — ADR: URL prefix versioning, deprecation policy
+  (`docs/adr/A3.5-api-versioning.md`)
+
+### Features
+- **W3.1 Cloud bridge mode** — `InMemoryBridgeTransport` implementation,
+  bridge REST API at `/sovd/v1/x-bridge/` (sessions, forward, heartbeat, disconnect,
+  status). Wired into `main.rs` with `bridge` config section. (`native-sovd/src/bridge.rs`)
+- **W3.2 Multi-tenant fleet model** — `TenantId` extractor, tenant-scoped audit
+  logging via `scoped_key()`, `MultiTenantConfig` in server config.
+- **W3.3 Variant-aware discovery** — `SovdComponent` extended with `softwareVersion`,
+  `hardwareVariant`, `installationVariant` fields. `VariantFilter` query params
+  on `GET /components` (`?variant=premium&softwareVersion=2.1.0`).
+- **W3.4 Zero-trust hardening** — Signed audit export endpoint
+  (`GET /audit/export`) with hash chain integrity proof. mTLS already in place
+  from Wave 1.
+
+### Enterprise Readiness
+- **E3.1 Client SDK generation** — `scripts/generate-sdk.sh` shell script using
+  openapi-generator-cli (or Docker fallback). Supports Python, TypeScript, Rust,
+  Java, Go, C#.
+- **E3.2 Compliance evidence export** — `GET /compliance-evidence` endpoint
+  returning aggregated security posture, audit integrity, component status, and
+  regulatory compliance evidence (ISO 17978-3, UNECE R155, ISO 27001).
+- **E3.3 Canary/blue-green routing** — `canary_routing_middleware` reads
+  `X-Deployment-Target` header; returns 421 if mismatched. Response includes
+  `X-Served-By` header. Deployment label via `SOVD_DEPLOYMENT_LABEL` env var.
+
+### Tests
+- **295 tests** (up from 269): +8 bridge transport tests, +15 tenant context tests,
+  +3 variant/compliance tests. All pass, clippy clean.
+
+---
+
 ## [0.8.1] — 2026-03-19
 
 ### Cleanup & Documentation Hygiene

@@ -45,6 +45,15 @@ pub struct SovdComponent {
     pub description: Option<String>,
     #[serde(rename = "connectionState")]
     pub connection_state: SovdConnectionState,
+    /// Software version installed on this component (Wave 3, W3.3 variant-aware discovery)
+    #[serde(skip_serializing_if = "Option::is_none", rename = "softwareVersion")]
+    pub software_version: Option<String>,
+    /// Hardware variant identifier (e.g. "EU-LHD", "US-RHD")
+    #[serde(skip_serializing_if = "Option::is_none", rename = "hardwareVariant")]
+    pub hardware_variant: Option<String>,
+    /// Installation variant (e.g. "base", "premium", "sport")
+    #[serde(skip_serializing_if = "Option::is_none", rename = "installationVariant")]
+    pub installation_variant: Option<String>,
 }
 
 /// SOVD connection state (SOVD §7.1)
@@ -744,6 +753,9 @@ mod tests {
             category: "ecu".into(),
             description: Some("Test ECU".into()),
             connection_state: SovdConnectionState::Connected,
+            software_version: Some("2.1.0".into()),
+            hardware_variant: Some("EU-LHD".into()),
+            installation_variant: Some("premium".into()),
         };
         let json = serde_json::to_string(&comp).unwrap();
         let deser: SovdComponent = serde_json::from_str(&json).unwrap();
@@ -759,6 +771,9 @@ mod tests {
             category: "ecu".into(),
             description: None,
             connection_state: SovdConnectionState::Disconnected,
+            software_version: None,
+            hardware_variant: None,
+            installation_variant: None,
         };
         let json = serde_json::to_value(&comp).unwrap();
         assert!(json.get("description").is_none());

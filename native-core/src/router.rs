@@ -428,6 +428,9 @@ mod tests {
                         category: "ecu".to_string(),
                         description: None,
                         connection_state: SovdConnectionState::Disconnected,
+                        software_version: None,
+                        hardware_variant: None,
+                        installation_variant: None,
                     })
                     .collect(),
             }

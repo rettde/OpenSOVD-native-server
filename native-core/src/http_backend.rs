@@ -305,6 +305,9 @@ impl ComponentBackend for SovdHttpBackend {
                     category: "ecu".to_owned(),
                     description: Some(format!("via {}", self.config.name)),
                     connection_state: SovdConnectionState::Disconnected,
+                    software_version: None,
+                    hardware_variant: None,
+                    installation_variant: None,
                 })
                 .collect();
         }
@@ -324,6 +327,9 @@ impl ComponentBackend for SovdHttpBackend {
                 category: "ecu".to_owned(),
                 description: Some(format!("via {}", self.config.name)),
                 connection_state: SovdConnectionState::Disconnected,
+                software_version: None,
+                hardware_variant: None,
+                installation_variant: None,
             });
         }
         None
