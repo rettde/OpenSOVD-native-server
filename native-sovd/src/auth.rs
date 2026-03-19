@@ -69,6 +69,8 @@ fn default_public_paths() -> Vec<String> {
     vec![
         "/sovd/v1/".to_owned(),
         "/sovd/v1/health".to_owned(),
+        "/healthz".to_owned(),
+        "/readyz".to_owned(),
         "/sovd/v1/$metadata".to_owned(),
         "/openapi.json".to_owned(),
         "/metrics".to_owned(),

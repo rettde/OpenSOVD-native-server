@@ -486,6 +486,9 @@ pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
                 async move { handle.render() }
             }),
         )
+        // Kubernetes-style probes (public, outside auth)
+        .route("/healthz", get(liveness_probe))
+        .route("/readyz", get(readiness_probe))
         .layer(axum::middleware::from_fn_with_state(
             AuthState {
                 config: auth_config,
@@ -1223,6 +1226,67 @@ async fn keepalive_status(State(state): State<AppState>) -> Json<serde_json::Val
 async fn health_check(State(state): State<AppState>) -> Json<serde_json::Value> {
     let info = state.health.system_info();
     Json(info)
+}
+
+// ── Kubernetes-style probes (outside auth, at root level) ────────────────────
+
+/// Liveness probe — is the process alive and responsive?
+/// Returns 200 unconditionally. If this fails, the process should be restarted.
+async fn liveness_probe() -> StatusCode {
+    StatusCode::OK
+}
+
+/// Readiness probe — can the server handle traffic?
+/// Checks backend connectivity and audit log availability.
+async fn readiness_probe(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    let mut checks = serde_json::Map::new();
+    let mut all_ok = true;
+
+    // Check: at least one backend has components
+    let component_count = state.backend.list_components().len();
+    checks.insert(
+        "backends".into(),
+        serde_json::json!({
+            "status": if component_count > 0 { "ok" } else { "warn" },
+            "components": component_count,
+        }),
+    );
+
+    // Check: audit log is operational
+    let audit_ok = state.audit_log.is_enabled();
+    checks.insert(
+        "audit_log".into(),
+        serde_json::json!({
+            "status": if audit_ok { "ok" } else { "degraded" },
+        }),
+    );
+
+    // Check: health monitor is functional
+    let health_info = state.health.system_info();
+    let health_ok = health_info.get("status").and_then(|s| s.as_str()) == Some("ok");
+    if !health_ok {
+        all_ok = false;
+    }
+    checks.insert(
+        "health_monitor".into(),
+        serde_json::json!({
+            "status": if health_ok { "ok" } else { "error" },
+        }),
+    );
+
+    if all_ok {
+        Ok(Json(serde_json::json!({
+            "status": "ready",
+            "checks": checks,
+        })))
+    } else {
+        Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(SovdErrorEnvelope::new("SOVD-ERR-503", "Server not ready")),
+        ))
+    }
 }
 
 // ── Audit Trail (Wave 1) ─────────────────────────────────────────────────
@@ -2748,6 +2812,34 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn liveness_probe_returns_200() {
+        let app = test_router();
+        let resp = app
+            .oneshot(Request::get("/healthz").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn readiness_probe_returns_ready() {
+        let app = test_router();
+        let resp = app
+            .oneshot(Request::get("/readyz").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["status"], "ready");
+        assert!(json["checks"]["backends"].is_object());
+        assert!(json["checks"]["audit_log"].is_object());
+        assert!(json["checks"]["health_monitor"].is_object());
     }
 
     #[tokio::test]
