@@ -1,4 +1,4 @@
-# OpenSOVD-native-server — Security Audit v0.8.0
+# OpenSOVD-native-server — Security Audit v0.8.1
 
 **Date:** 2026-03-15
 **Scope:** Full codebase review — authentication, authorization, input validation, secrets handling, dependency security, unsafe code, DoS vectors
@@ -226,7 +226,7 @@ All justified with inline `#[allow(...)]` comments:
 
 ## 10. Test Coverage Requirements
 
-### 10.1 Current State (v0.8.0)
+### 10.1 Current State (v0.8.1)
 - **269 tests** across workspace (all passing)
 - Test distribution: interfaces 33, core 75, uds 40, health 6, sovd 73
 
@@ -281,4 +281,4 @@ The main gaps are **operational** (missing `cargo-audit` in CI, no rate limiting
 
 ---
 
-*Audit initially performed against codebase v0.5.0 (2026-03-15), updated for v0.8.0 (2026-03-19). 269 tests passing. Clippy pedantic clean.*
+*Audit initially performed against codebase v0.5.0 (2026-03-15), updated for v0.8.1 (2026-03-19). 269 tests passing. Clippy pedantic clean.*

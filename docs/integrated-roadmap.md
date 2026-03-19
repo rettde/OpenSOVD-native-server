@@ -230,7 +230,7 @@ These are the critical moments where a refactoring decision **must** be made to 
 
 ---
 
-## Current Status (v0.8.0 — Wave 2 complete)
+## Current Status (v0.8.1 — Wave 2 complete)
 
 | Item | Status | Tests |
 |------|--------|-------|

@@ -1,6 +1,6 @@
 # ASAM SOVD V1.0.0 Compliance Audit
 
-**Project:** OpenSOVD-native-server v0.8.0
+**Project:** OpenSOVD-native-server v0.8.1
 **Date:** 2026-03-16
 **Scope:** Full codebase audit against ASAM SOVD V1.0.0 (Association for Standardization of Automation and Measuring Systems — Service-Oriented Vehicle Diagnostics API Specification)
 **Basis:** ASAM SOVD BS V1.0.0, publicly available ASAM presentations, Softing SOVD documentation, Vector SOVD whitepaper, Eclipse OpenSOVD design references

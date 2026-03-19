@@ -1,4 +1,4 @@
-# Release Notes — OpenSOVD-native-server v0.8.0-beta
+# Release Notes — OpenSOVD-native-server v0.8.1-beta
 
 **Date:** 2026-03-19
 **License:** Apache-2.0

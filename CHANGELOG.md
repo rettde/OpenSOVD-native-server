@@ -7,6 +7,33 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.8.1] — 2026-03-19
+
+### Cleanup & Documentation Hygiene
+
+### Removed
+- **`docs/release-notes-v0.7.0-beta.md`** — v0.7.0 was never released (skipped to v0.8.0)
+- **`docs/wave-1-implementation-plan.md`** — completed, superseded by integrated-roadmap
+- **`docs/wave-2-implementation-plan.md`** — completed, superseded by integrated-roadmap
+
+### Fixed
+- **Stale code comments** — removed references to deleted `LocalUdsBackend`,
+  `native-comm-doip`, and `local-uds` feature in `state.rs`, `diag.rs`, `routes.rs`
+- **Stale version numbers** — README test count (227→269), demo-ecu serverVersion
+  (0.5.0→0.8.1), security-audit/compliance-audit version headers
+- **`MBDS_CONFORMANCE_AUDIT.md`** — moved to `.gitignore` (proprietary content)
+
+### Changed
+- **`docs/architecture.md`** — major rewrite: removed all references to deleted crates
+  (`native-comm-doip`, `native-comm-uds`, `SovdTranslator`, `OtaFlashOrchestrator`),
+  updated to reflect current gateway-only architecture with `ComponentRouter` +
+  `SovdHttpBackend`. Updated dependency graph, data flow, threading model, config,
+  extensions, CDA alignment, and test sections. (782→593 lines)
+- **`docs/integrated-roadmap.md`** — status section updated to v0.8.1 / Wave 2 complete
+- All version references across docs updated to v0.8.1
+
+---
+
 ## [0.8.0] — 2026-03-19
 
 ### Wave 2 Complete — Pluggable Infrastructure + Observability

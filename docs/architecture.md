@@ -555,7 +555,7 @@ cargo build --release --features otlp
 cargo build --release --target aarch64-unknown-linux-gnu
 ```
 
-**Test-Coverage (269 Tests, v0.8.0):**
+**Test-Coverage (269 Tests, v0.8.1):**
 - `native-interfaces` — 52 Tests (SOVD-Typen, StorageBackend, SecretProvider, OemProfile, Backend-Traits)
 - `native-core` — 67 Tests (FaultManager, LockManager, DiagLog, Router, HttpBackend, FaultBridge, FaultGovernor, AuditLog hash chain)
 - `native-health` — 6 Tests (JSON-Struktur, Speicher-Werte, Uptime)
@@ -589,4 +589,4 @@ cargo build --release --target aarch64-unknown-linux-gnu
 - **[cda-sovd-analysis.md](cda-sovd-analysis.md)** — CDA vs. SOVD-Standard Analyse
 - **[requirements-cda-adaptions.md](requirements-cda-adaptions.md)** — Abgeleitete Requirements
 - **[architecture-review.md](architecture-review.md)** — Gateway-Refactoring Dokumentation
-- **[release-notes-v0.8.0-beta.md](release-notes-v0.8.0-beta.md)** — Aktuelle Release Notes
+- **[release-notes-v0.8.1-beta.md](release-notes-v0.8.1-beta.md)** — Aktuelle Release Notes

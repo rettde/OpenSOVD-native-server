@@ -398,7 +398,7 @@ fn sovd_error(code: &str, message: &str) -> serde_json::Value {
 async fn server_info() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "serverName": "demo-ecu",
-        "serverVersion": "0.8.0",
+        "serverVersion": "0.8.1",
         "sovdVersion": "1.1.0",
         "description": "Mock ECU backend — BMS + Climate Controller",
         "supportedProtocols": ["http/1.1"],
