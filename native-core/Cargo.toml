@@ -43,6 +43,7 @@ sled = { workspace = true, optional = true }
 
 [dev-dependencies]
 axum = { workspace = true, features = ["tokio", "json", "http1"] }
+tempfile = { workspace = true }
 
 [features]
 default = []

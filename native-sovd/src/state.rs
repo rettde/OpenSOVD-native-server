@@ -13,7 +13,7 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use native_core::{DiagLog, FaultManager, LockManager};
+use native_core::{AuditLog, DiagLog, FaultManager, LockManager};
 use native_health::HealthMonitor;
 use native_interfaces::oem::OemProfile;
 use native_interfaces::sovd::{SovdOperationExecution, SovdProximityChallenge};
@@ -30,6 +30,8 @@ pub struct AppState {
     pub fault_manager: Arc<FaultManager>,
     pub lock_manager: Arc<LockManager>,
     pub diag_log: Arc<DiagLog>,
+    /// Audit trail — tamper-resistant log of security-relevant actions (Wave 1)
+    pub audit_log: Arc<AuditLog>,
     pub health: Arc<HealthMonitor>,
     /// Execution history: executionId → SovdOperationExecution
     pub execution_store: Arc<DashMap<String, SovdOperationExecution>>,

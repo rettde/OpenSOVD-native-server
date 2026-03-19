@@ -26,6 +26,7 @@
     clippy::map_unwrap_or
 )]
 
+pub mod audit_log;
 pub mod diag_log;
 pub mod fault_bridge;
 pub mod fault_manager;
@@ -34,6 +35,7 @@ pub mod lock_manager;
 pub mod router;
 
 // ── Re-exports ──────────────────────────────────────────────────────────────
+pub use audit_log::{AuditLog, AuditLogConfig};
 pub use diag_log::DiagLog;
 pub use fault_bridge::{FaultBridge, FaultLifecycleStage, FaultRecord, FaultSeverity, FaultSink};
 pub use fault_manager::FaultManager;

@@ -398,7 +398,9 @@ pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
         // OData metadata (§5.2)
         .route("/$metadata", get(odata_metadata))
         // Health (non-SOVD, operational)
-        .route("/health", get(health_check));
+        .route("/health", get(health_check))
+        // Audit trail (Wave 1)
+        .route("/audit", get(list_audit_entries));
 
     // ── Vendor extensions (x-uds prefixed, non-standard) ────────────────
     let x_uds = Router::new()
@@ -488,6 +490,7 @@ pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
             AuthState {
                 config: auth_config,
                 oem_profile: state.oem_profile.clone(),
+                audit_log: state.audit_log.clone(),
             },
             auth_middleware,
         ))
@@ -723,6 +726,10 @@ async fn connect_component(
         .connect(&component_id)
         .await
         .map_err(|ref e| diag_error(e))?;
+    state.audit_log.record(
+        "anonymous", SovdAuditAction::Connect,
+        &format!("component/{component_id}"), "connect", "POST", "success", None, None,
+    );
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -735,6 +742,10 @@ async fn disconnect_component(
         .disconnect(&component_id)
         .await
         .map_err(|ref e| diag_error(e))?;
+    state.audit_log.record(
+        "anonymous", SovdAuditAction::Disconnect,
+        &format!("component/{component_id}"), "disconnect", "POST", "success", None, None,
+    );
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -762,6 +773,10 @@ async fn clear_faults(
     state
         .fault_manager
         .clear_faults_for_component(&component_id);
+    state.audit_log.record(
+        &caller.0, SovdAuditAction::ClearFaults,
+        &format!("component/{component_id}"), "faults", "DELETE", "success", None, None,
+    );
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -840,6 +855,10 @@ async fn write_data(
         .write_data(&component_id, &data_id, &bytes)
         .await
         .map_err(|ref e| diag_error(e))?;
+    state.audit_log.record(
+        &caller.0, SovdAuditAction::WriteData,
+        &format!("component/{component_id}"), &format!("data/{data_id}"), "PUT", "success", None, None,
+    );
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -963,6 +982,11 @@ async fn execute_operation(
             .map_err(|e| bad_request(&format!("Location header error: {e}")))?,
     );
 
+    state.audit_log.record(
+        &caller.0, SovdAuditAction::ExecuteOperation,
+        &format!("component/{component_id}"), &format!("operations/{op_id}"),
+        "POST", "success", Some(&exec_id), None,
+    );
     Ok((StatusCode::ACCEPTED, resp_headers, Json(final_exec)))
 }
 
@@ -1176,7 +1200,11 @@ async fn start_flash(
         .flash(&component_id, &firmware, body.memory_address)
         .await
         .map_err(|ref e| diag_error(e))?;
-
+    state.audit_log.record(
+        &caller.0, SovdAuditAction::FlashStart,
+        &format!("component/{component_id}"), "flash",
+        "POST", "success", None, None,
+    );
     Ok((StatusCode::ACCEPTED, Json(result)))
 }
 
@@ -1195,6 +1223,43 @@ async fn keepalive_status(State(state): State<AppState>) -> Json<serde_json::Val
 async fn health_check(State(state): State<AppState>) -> Json<serde_json::Value> {
     let info = state.health.system_info();
     Json(info)
+}
+
+// ── Audit Trail (Wave 1) ─────────────────────────────────────────────────
+
+/// Query parameters for the /audit endpoint.
+#[derive(Debug, Deserialize)]
+struct AuditQueryParams {
+    /// Filter by caller identity
+    #[serde(default)]
+    caller: Option<String>,
+    /// Filter by action (e.g. "readData", "writeData", "clearFaults")
+    #[serde(default)]
+    action: Option<native_interfaces::sovd::SovdAuditAction>,
+    /// Filter by target (prefix match, e.g. "component/hpc")
+    #[serde(default)]
+    target: Option<String>,
+    /// Filter by outcome ("success", "denied", "error")
+    #[serde(default)]
+    outcome: Option<String>,
+    /// Maximum number of results (default: 100)
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+async fn list_audit_entries(
+    State(state): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<AuditQueryParams>,
+) -> Json<Collection<native_interfaces::sovd::SovdAuditEntry>> {
+    let filter = native_core::audit_log::AuditFilter {
+        caller: params.caller,
+        action: params.action,
+        target: params.target,
+        outcome: params.outcome,
+        limit: Some(params.limit.unwrap_or(100)),
+    };
+    let entries = state.audit_log.query(&filter);
+    Json(Collection::new(entries).with_context("$metadata#audit"))
 }
 
 // ── Data Listing (SOVD §7.5) ─────────────────────────────────────────────
@@ -1280,6 +1345,10 @@ async fn acquire_lock(
         .lock_manager
         .acquire(&component_id, owner, body.expires)
         .map_err(|e| conflict(&e))?;
+    state.audit_log.record(
+        owner, SovdAuditAction::AcquireLock,
+        &format!("component/{component_id}"), "lock", "POST", "success", None, None,
+    );
     Ok((StatusCode::CREATED, Json(lock)))
 }
 
@@ -1311,6 +1380,10 @@ async fn release_lock(
         return Err(not_found(&format!("No lock on component '{component_id}'")));
     }
     state.lock_manager.release(&component_id);
+    state.audit_log.record(
+        &caller.0, SovdAuditAction::ReleaseLock,
+        &format!("component/{component_id}"), "lock", "DELETE", "success", None, None,
+    );
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1628,7 +1701,11 @@ async fn set_mode(
         .backend
         .get_mode(&component_id)
         .map_err(|ref e| diag_error(e))?;
-
+    state.audit_log.record(
+        &caller.0, SovdAuditAction::SetMode,
+        &format!("component/{component_id}"), &format!("modes/{}", body.mode),
+        "POST", "success", None, None,
+    );
     Ok(Json(mode))
 }
 
@@ -1703,6 +1780,11 @@ async fn install_software_package(
         .install_software_package(&component_id, &package_id)
         .await
         .map_err(|ref e| diag_error(e))?;
+    state.audit_log.record(
+        &caller.0, SovdAuditAction::InstallPackage,
+        &format!("component/{component_id}"), &format!("software-packages/{package_id}"),
+        "POST", "success", None, None,
+    );
     Ok((StatusCode::ACCEPTED, Json(pkg)))
 }
 
@@ -1783,7 +1865,10 @@ async fn write_config(
         .write_config(&component_id, &body.name, &data)
         .await
         .map_err(|ref e| diag_error(e))?;
-
+    state.audit_log.record(
+        &caller.0, SovdAuditAction::WriteConfig,
+        &format!("component/{component_id}"), "configurations", "PUT", "success", None, None,
+    );
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1888,6 +1973,14 @@ fn diag_error(e: &native_interfaces::DiagServiceError) -> (StatusCode, Json<Sovd
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::unnecessary_literal_bound,
+    clippy::uninlined_format_args,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure_for_method_calls
+)]
 mod tests {
     use super::*;
     use axum::body::Body;
@@ -2124,7 +2217,7 @@ mod tests {
     }
 
     fn test_state() -> AppState {
-        use native_core::{ComponentRouter, DiagLog, FaultManager, LockManager};
+        use native_core::{AuditLog, ComponentRouter, DiagLog, FaultManager, LockManager};
         use native_health::HealthMonitor;
         use std::sync::Arc;
 
@@ -2137,6 +2230,7 @@ mod tests {
             fault_manager: Arc::new(FaultManager::new()),
             lock_manager: Arc::new(LockManager::new()),
             diag_log: Arc::new(DiagLog::new()),
+            audit_log: Arc::new(AuditLog::new()),
             health: Arc::new(HealthMonitor::new()),
             execution_store: Arc::new(dashmap::DashMap::new()),
             proximity_store: Arc::new(dashmap::DashMap::new()),
@@ -2686,7 +2780,7 @@ mod tests {
             .oneshot(
                 Request::post("/sovd/v1/components/hpc/proximity-challenge")
                     .header("content-type", "application/json")
-                    .body(Body::from(r#"{}"#))
+                    .body(Body::from("{}"))
                     .unwrap(),
             )
             .await
@@ -2857,6 +2951,237 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
     }
+
+    // ── Audit Trail integration tests ──────────────────────────────────
+
+    #[tokio::test]
+    async fn audit_endpoint_returns_empty_initially() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/audit")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["@odata.count"], 0);
+        assert!(json["value"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn write_data_creates_audit_entry() {
+        let state = test_state();
+        let app = build_router(state.clone(), AuthConfig::default());
+
+        // Perform a write_data
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::put("/sovd/v1/components/hpc/data/vin")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"value":"WVWZZZ3CZWE123456"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Check audit log has an entry
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/audit")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let entries = json["value"].as_array().unwrap();
+        assert!(!entries.is_empty(), "Audit log should have at least one entry");
+        let last = entries.last().unwrap();
+        assert_eq!(last["action"], "writeData");
+        assert!(last["target"].as_str().unwrap().contains("hpc"));
+    }
+
+    #[tokio::test]
+    async fn clear_faults_creates_audit_entry() {
+        let state = test_state();
+        let app = build_router(state.clone(), AuthConfig::default());
+
+        // Clear faults
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::delete("/sovd/v1/components/hpc/faults")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Query audit with action filter
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/audit?action=clearFaults")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let count = json["@odata.count"].as_u64().unwrap();
+        assert!(count >= 1, "Should have at least 1 clearFaults audit entry");
+    }
+
+    #[tokio::test]
+    async fn lock_operations_create_audit_entries() {
+        let state = test_state();
+        let app = build_router(state.clone(), AuthConfig::default());
+
+        // Acquire lock
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::post("/sovd/v1/components/hpc/lock")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"lockedBy":"tester"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Release lock
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::delete("/sovd/v1/components/hpc/lock")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Query audit for lock actions
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/audit?target=component/hpc")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let entries = json["value"].as_array().unwrap();
+        let actions: Vec<&str> = entries
+            .iter()
+            .filter_map(|e| e["action"].as_str())
+            .collect();
+        assert!(actions.contains(&"acquireLock"), "Should have acquireLock");
+        assert!(actions.contains(&"releaseLock"), "Should have releaseLock");
+    }
+
+    #[tokio::test]
+    async fn audit_limit_query_param_works() {
+        let state = test_state();
+        let app = build_router(state.clone(), AuthConfig::default());
+
+        // Generate multiple audit entries
+        for _ in 0..5 {
+            let _ = app
+                .clone()
+                .oneshot(
+                    Request::delete("/sovd/v1/components/hpc/faults")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+        }
+
+        // Query with limit=2
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/audit?limit=2")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let entries = json["value"].as_array().unwrap();
+        assert_eq!(entries.len(), 2, "Limit should cap results to 2");
+    }
+
+    #[tokio::test]
+    async fn connect_disconnect_create_audit_entries() {
+        let state = test_state();
+        let app = build_router(state.clone(), AuthConfig::default());
+
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::post("/sovd/v1/x-uds/components/hpc/connect")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let connect_status = resp.status();
+
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::post("/sovd/v1/x-uds/components/hpc/disconnect")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let disconnect_status = resp.status();
+
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/audit")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let entries = json["value"].as_array().unwrap();
+        assert_eq!(connect_status, StatusCode::NO_CONTENT, "connect should succeed");
+        assert_eq!(disconnect_status, StatusCode::NO_CONTENT, "disconnect should succeed");
+        let actions: Vec<&str> = entries
+            .iter()
+            .filter_map(|e| e["action"].as_str())
+            .collect();
+        assert!(actions.contains(&"connect"), "actions={actions:?}");
+        assert!(actions.contains(&"disconnect"), "actions={actions:?}");
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2866,6 +3191,14 @@ mod tests {
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::unnecessary_literal_bound,
+    clippy::uninlined_format_args,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure_for_method_calls
+)]
 mod mock_backend_tests {
     use super::*;
     use async_trait::async_trait;
@@ -3102,6 +3435,7 @@ mod mock_backend_tests {
             fault_manager: Arc::new(FaultManager::new()),
             lock_manager: Arc::new(LockManager::new()),
             diag_log: Arc::new(DiagLog::new()),
+            audit_log: Arc::new(native_core::AuditLog::new()),
             health: Arc::new(HealthMonitor::new()),
             execution_store: Arc::new(dashmap::DashMap::new()),
             proximity_store: Arc::new(dashmap::DashMap::new()),

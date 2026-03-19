@@ -13,7 +13,7 @@
 //       └→ SecurityPluginLoader       (combines init + auth + Default)
 //
 //   OpenSOVD pattern:
-//     OemProfile: AuthPolicy + EntityIdPolicy + DiscoveryPolicy + CdfPolicy
+//     OemProfile: AuthPolicy + AuthzPolicy + EntityIdPolicy + DiscoveryPolicy + CdfPolicy
 //       └→ DefaultProfile  (standard SOVD — permissive, no OEM restrictions)
 //       └→ MbdsProfile     (Mercedes-Benz — DDAG IDs, VIN binding, scope ceiling)
 //
@@ -153,6 +153,71 @@ pub struct CdfApplicability {
     pub offline: bool,
 }
 
+// ── Sub-trait: Fine-Grained Authorization Policy (Wave 1) ─────────────
+
+/// Context for fine-grained authorization decisions.
+///
+/// Built from the HTTP request after successful authentication.
+/// Contains semantic fields parsed from the matched route template
+/// so that `AuthzPolicy` implementations can make decisions based on
+/// entity type, resource, and action — not just the raw URL path.
+#[derive(Debug, Clone)]
+pub struct AuthzContext {
+    /// Authenticated caller identity (from JWT `sub` / API key label)
+    pub caller: String,
+    /// Parsed JWT roles (from `roles` claim), empty if API key auth
+    pub roles: Vec<String>,
+    /// OAuth2 scopes (from `scope` / `scp` claim), empty if not present
+    pub scopes: Vec<String>,
+    /// HTTP method: "GET", "POST", "PUT", "DELETE", "PATCH"
+    pub method: String,
+    /// Entity type being accessed: "component", "app", "func", "group", "server"
+    pub entity_type: String,
+    /// Entity ID (e.g. component_id, app_id), None for collection endpoints
+    pub entity_id: Option<String>,
+    /// Resource being accessed: "data", "faults", "operations", "configurations",
+    ///   "software-packages", "lock", "mode", "logs", "proximity-challenge",
+    ///   "capabilities", "discovery", "audit"
+    pub resource: String,
+    /// Sub-resource ID (e.g. data_id, fault_id, op_id), None for collections
+    pub resource_id: Option<String>,
+    /// Full original request path (for fallback / logging)
+    pub path: String,
+}
+
+/// Result of an authorization decision.
+#[derive(Debug, Clone)]
+pub enum AuthzDecision {
+    /// Allow the request to proceed.
+    Allow,
+    /// Deny the request with an HTTP status code and SOVD error.
+    Deny {
+        status: HttpStatusCode,
+        code: String,
+        message: String,
+    },
+}
+
+/// OEM-specific fine-grained authorization rules (Wave 1).
+///
+/// Called **after** successful authentication (API key / JWT / OIDC) to decide
+/// whether the authenticated caller is allowed to perform the specific action
+/// on the specific resource.  This enables per-resource, per-operation, and
+/// per-entity authorization policies beyond token-level validation.
+///
+/// Default: allow everything (standard SOVD — no restrictions).
+pub trait AuthzPolicy: Send + Sync {
+    /// Authorize a request after authentication has succeeded.
+    ///
+    /// Return `AuthzDecision::Allow` to proceed, or `AuthzDecision::Deny { .. }`
+    /// to reject with the given HTTP status and SOVD error code.
+    ///
+    /// Default: allow all requests (permissive, standard SOVD behavior).
+    fn authorize(&self, _ctx: &AuthzContext) -> AuthzDecision {
+        AuthzDecision::Allow
+    }
+}
+
 // ── Main trait: OEM Profile (combines all sub-traits) ────────────────────
 
 /// Complete OEM customization profile for the SOVD server.
@@ -163,26 +228,31 @@ pub struct CdfApplicability {
 /// # Architecture (inspired by CDA SecurityPlugin)
 ///
 /// ```text
-/// ┌─────────────────────────────────────────────────────┐
-/// │                    OemProfile                        │
-/// │  ┌─────────────┐ ┌───────────────┐ ┌─────────────┐ │
-/// │  │ AuthPolicy   │ │EntityIdPolicy │ │CdfPolicy    │ │
-/// │  │ • 401 vs 403 │ │• DDAG rules   │ │• x-sovd-*   │ │
-/// │  │ • VIN check  │ │• max length   │ │• offline    │ │
-/// │  │ • scope ceil │ │               │ │• unit       │ │
-/// │  └──────────────┘ └───────────────┘ └─────────────┘ │
-/// │  ┌─────────────────────────────────────────────────┐ │
-/// │  │            DiscoveryPolicy                      │ │
-/// │  │  • areas_enabled  • funcs_enabled               │ │
-/// │  └─────────────────────────────────────────────────┘ │
-/// └─────────────────────────────────────────────────────┘
+/// ┌───────────────────────────────────────────────────────────┐
+/// │                       OemProfile                          │
+/// │  ┌─────────────┐ ┌───────────────┐ ┌─────────────┐       │
+/// │  │ AuthPolicy   │ │EntityIdPolicy │ │CdfPolicy    │       │
+/// │  │ • 401 vs 403 │ │• DDAG rules   │ │• x-sovd-*   │       │
+/// │  │ • VIN check  │ │• max length   │ │• offline    │       │
+/// │  │ • scope ceil │ │               │ │• unit       │       │
+/// │  └──────────────┘ └───────────────┘ └─────────────┘       │
+/// │  ┌─────────────────────────────────────────────────┐       │
+/// │  │            DiscoveryPolicy                      │       │
+/// │  │  • areas_enabled  • funcs_enabled               │       │
+/// │  └─────────────────────────────────────────────────┘       │
+/// │  ┌─────────────────────────────────────────────────┐       │
+/// │  │            AuthzPolicy (Wave 1)                 │       │
+/// │  │  • authorize(ctx) → Allow / Deny                │       │
+/// │  │  • per-resource, per-operation, per-entity      │       │
+/// │  └─────────────────────────────────────────────────┘       │
+/// └───────────────────────────────────────────────────────────┘
 ///           ▲                          ▲
 ///     DefaultProfile             MbdsProfile
 ///    (standard SOVD)        (Mercedes-Benz S-SOVD)
 /// ```
 ///
 /// Injected as `Arc<dyn OemProfile>` into `AppState`.
-pub trait OemProfile: AuthPolicy + EntityIdPolicy + DiscoveryPolicy + CdfPolicy + Send + Sync {
+pub trait OemProfile: AuthPolicy + AuthzPolicy + EntityIdPolicy + DiscoveryPolicy + CdfPolicy + Send + Sync {
     /// Human-readable profile name for logging and diagnostics.
     fn name(&self) -> &'static str;
 
@@ -191,6 +261,7 @@ pub trait OemProfile: AuthPolicy + EntityIdPolicy + DiscoveryPolicy + CdfPolicy 
 
     /// Upcast helpers (analogous to CDA's `as_auth_plugin()` / `as_security_plugin()`)
     fn as_auth_policy(&self) -> &dyn AuthPolicy;
+    fn as_authz_policy(&self) -> &dyn AuthzPolicy;
     fn as_entity_id_policy(&self) -> &dyn EntityIdPolicy;
     fn as_discovery_policy(&self) -> &dyn DiscoveryPolicy;
     fn as_cdf_policy(&self) -> &dyn CdfPolicy;
@@ -201,6 +272,7 @@ pub trait OemProfile: AuthPolicy + EntityIdPolicy + DiscoveryPolicy + CdfPolicy 
 /// Standard SOVD profile with no OEM-specific restrictions.
 ///
 /// - Accepts all JWT tokens (no VIN/scope enforcement)
+/// - Allows all requests (no fine-grained authorization)
 /// - Allows all entity types (including Area)
 /// - Permissive entity ID validation (any non-empty string)
 /// - Standard CDF extensions (online-only, no unit, no proximity proof)
@@ -210,6 +282,7 @@ pub trait OemProfile: AuthPolicy + EntityIdPolicy + DiscoveryPolicy + CdfPolicy 
 pub struct DefaultProfile;
 
 impl AuthPolicy for DefaultProfile {}
+impl AuthzPolicy for DefaultProfile {}
 impl EntityIdPolicy for DefaultProfile {}
 impl DiscoveryPolicy for DefaultProfile {}
 impl CdfPolicy for DefaultProfile {}
@@ -224,6 +297,9 @@ impl OemProfile for DefaultProfile {
     }
 
     fn as_auth_policy(&self) -> &dyn AuthPolicy {
+        self
+    }
+    fn as_authz_policy(&self) -> &dyn AuthzPolicy {
         self
     }
     fn as_entity_id_policy(&self) -> &dyn EntityIdPolicy {

@@ -410,7 +410,71 @@ pub struct SovdBulkWriteItem {
     pub value: String,
 }
 
+// ── Audit Trail (Wave 1) ─────────────────────────────────────────────────
+
+/// Action classification for audit trail entries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SovdAuditAction {
+    ReadData,
+    WriteData,
+    BulkRead,
+    BulkWrite,
+    ReadFaults,
+    ClearFaults,
+    ExecuteOperation,
+    CancelExecution,
+    AcquireLock,
+    ReleaseLock,
+    ReadConfig,
+    WriteConfig,
+    ListSoftwarePackages,
+    InstallPackage,
+    ProximityChallenge,
+    SetMode,
+    Connect,
+    Disconnect,
+    AuthSuccess,
+    AuthFailure,
+    AuthzDenied,
+    IoControl,
+    FlashStart,
+    ReadMemory,
+    WriteMemory,
+}
+
+/// A single audit trail entry recording a security-relevant action.
+///
+/// Designed for tamper-resistant logging: each entry is self-contained
+/// and can be serialized as a single JSON line for append-only file sinks.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SovdAuditEntry {
+    /// Monotonic sequence number
+    pub seq: u64,
+    /// ISO 8601 timestamp
+    pub timestamp: String,
+    /// Authenticated caller identity
+    pub caller: String,
+    /// Action performed
+    pub action: SovdAuditAction,
+    /// Target entity (e.g. "component/hpc", "app/health-monitor")
+    pub target: String,
+    /// Resource path (e.g. "data/rpm", "faults", "lock")
+    pub resource: String,
+    /// HTTP method
+    pub method: String,
+    /// Outcome: "success", "denied", "error"
+    pub outcome: String,
+    /// Optional detail (e.g. error message, written value summary)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// W3C trace ID for correlation with distributed tracing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace_id: Option<String>,
+}
+
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

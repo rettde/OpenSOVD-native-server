@@ -21,7 +21,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 use dashmap::DashMap;
 use native_core::{
-    ComponentRouter, DiagLog, FaultBridge, FaultManager, LockManager, SovdHttpBackend,
+    AuditLog, ComponentRouter, DiagLog, FaultBridge, FaultManager, LockManager, SovdHttpBackend,
     SovdHttpBackendConfig,
 };
 use native_health::HealthMonitor;
@@ -210,12 +210,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     tracing::info!(profile = oem_profile.name(), "OEM profile loaded");
 
+    let audit_log = Arc::new(AuditLog::new());
+    info!("Audit log enabled (in-memory, {} max entries)", 10_000);
+
     let state = AppState {
         backend: router,
         oem_profile,
         fault_manager,
         lock_manager,
         diag_log,
+        audit_log: audit_log.clone(),
         health,
         execution_store: Arc::new(DashMap::new()),
         proximity_store: Arc::new(DashMap::new()),
@@ -242,8 +246,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(|e| format!("TLS config error: {e}"))?
         };
 
+        // Graceful shutdown handle for axum_server (TLS path)
+        let handle = axum_server::Handle::new();
+        let shutdown_handle = handle.clone();
+        tokio::spawn(async move {
+            shutdown_signal().await;
+            // 10-second grace period for in-flight requests
+            shutdown_handle.graceful_shutdown(Some(std::time::Duration::from_secs(10)));
+        });
+
         info!("SOVD API listening on https://{bind_addr}/sovd/v1 (TLS enabled)");
         axum_server::bind_rustls(bind_addr.parse()?, tls_config)
+            .handle(handle)
             .serve(app.into_make_service())
             .await?;
     } else {
@@ -256,9 +270,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
     }
 
-    // Graceful shutdown
+    // ── Post-shutdown cleanup ───────────────────────────────────────────
+    info!("Server stopped — running cleanup");
+    audit_log.flush();
+    info!("Audit log flushed");
     someip_runtime.stop().await;
-    info!("OpenSOVD-native-server stopped");
+    info!("OpenSOVD-native-server shutdown complete");
 
     Ok(())
 }

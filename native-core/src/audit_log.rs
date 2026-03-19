@@ -1,0 +1,474 @@
+// Copyright (c) 2024 Contributors to the Eclipse OpenSOVD project
+// SPDX-License-Identifier: Apache-2.0
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Audit Log — Tamper-resistant trail of security-relevant actions (Wave 1)
+//
+// Records every mutating or security-sensitive action with caller identity,
+// timestamp, action type, target, and outcome.
+//
+// Two backends:
+//   1. In-memory ring buffer (bounded, for REST API queries)
+//   2. Optional append-only JSONL file (for persistence / SIEM integration)
+// ─────────────────────────────────────────────────────────────────────────────
+
+use std::collections::VecDeque;
+use std::io::Write;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
+
+use native_interfaces::sovd::{SovdAuditAction, SovdAuditEntry};
+use tracing::{debug, warn};
+
+const DEFAULT_MAX_ENTRIES: usize = 10_000;
+
+/// Thread-safe audit log with bounded in-memory buffer and optional file sink.
+pub struct AuditLog {
+    entries: Mutex<VecDeque<SovdAuditEntry>>,
+    max_entries: usize,
+    seq_counter: AtomicU64,
+    /// Optional append-only JSONL file for tamper-resistant persistence
+    file_sink: Option<Mutex<std::io::BufWriter<std::fs::File>>>,
+    /// Whether the audit log is enabled
+    enabled: bool,
+}
+
+/// Configuration for the audit log.
+#[derive(Debug, Clone, Default)]
+pub struct AuditLogConfig {
+    /// Enable the audit log (default: true)
+    pub enabled: bool,
+    /// Maximum number of entries in the in-memory ring buffer
+    pub max_entries: usize,
+    /// Optional path for append-only JSONL file sink
+    pub file_path: Option<String>,
+}
+
+/// Filter criteria for querying audit entries.
+#[derive(Debug, Clone, Default)]
+pub struct AuditFilter {
+    /// Filter by caller identity
+    pub caller: Option<String>,
+    /// Filter by action type
+    pub action: Option<SovdAuditAction>,
+    /// Filter by target (prefix match)
+    pub target: Option<String>,
+    /// Filter by outcome
+    pub outcome: Option<String>,
+    /// Maximum number of results
+    pub limit: Option<usize>,
+}
+
+impl AuditLog {
+    /// Create a new audit log with default settings (enabled, 10k entries, no file).
+    pub fn new() -> Self {
+        Self {
+            entries: Mutex::new(VecDeque::with_capacity(DEFAULT_MAX_ENTRIES)),
+            max_entries: DEFAULT_MAX_ENTRIES,
+            seq_counter: AtomicU64::new(1),
+            file_sink: None,
+            enabled: true,
+        }
+    }
+
+    /// Create an audit log from configuration.
+    pub fn from_config(config: &AuditLogConfig) -> Self {
+        let max = if config.max_entries > 0 {
+            config.max_entries
+        } else {
+            DEFAULT_MAX_ENTRIES
+        };
+
+        let file_sink = config.file_path.as_ref().and_then(|path| {
+            // Ensure parent directory exists
+            if let Some(parent) = std::path::Path::new(path).parent() {
+                if !parent.exists() {
+                    if let Err(e) = std::fs::create_dir_all(parent) {
+                        warn!(path = %path, error = %e, "Failed to create audit log directory");
+                        return None;
+                    }
+                }
+            }
+            match std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+            {
+                Ok(file) => {
+                    debug!(path = %path, "Audit log file sink opened");
+                    Some(Mutex::new(std::io::BufWriter::new(file)))
+                }
+                Err(e) => {
+                    warn!(path = %path, error = %e, "Failed to open audit log file");
+                    None
+                }
+            }
+        });
+
+        Self {
+            entries: Mutex::new(VecDeque::with_capacity(max)),
+            max_entries: max,
+            seq_counter: AtomicU64::new(1),
+            file_sink,
+            enabled: config.enabled,
+        }
+    }
+
+    /// Record an audit event. This is the primary entry point.
+    ///
+    /// Caller provides action metadata; the audit log adds seq number and timestamp.
+    #[allow(clippy::too_many_arguments)]
+    pub fn record(
+        &self,
+        caller: &str,
+        action: SovdAuditAction,
+        target: &str,
+        resource: &str,
+        method: &str,
+        outcome: &str,
+        detail: Option<&str>,
+        trace_id: Option<&str>,
+    ) {
+        if !self.enabled {
+            return;
+        }
+
+        let entry = SovdAuditEntry {
+            seq: self.seq_counter.fetch_add(1, Ordering::Relaxed),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            caller: caller.to_owned(),
+            action,
+            target: target.to_owned(),
+            resource: resource.to_owned(),
+            method: method.to_owned(),
+            outcome: outcome.to_owned(),
+            detail: detail.map(ToOwned::to_owned),
+            trace_id: trace_id.map(ToOwned::to_owned),
+        };
+
+        // Write to file sink first (before memory, so file is always ahead)
+        if let Some(ref sink) = self.file_sink {
+            if let Ok(mut writer) = sink.lock() {
+                if let Ok(json) = serde_json::to_string(&entry) {
+                    let _ = writeln!(writer, "{json}");
+                    let _ = writer.flush();
+                }
+            }
+        }
+
+        // Append to in-memory ring buffer
+        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        if entries.len() >= self.max_entries {
+            entries.pop_front();
+        }
+        entries.push_back(entry);
+    }
+
+    /// Query audit entries with optional filters.
+    pub fn query(&self, filter: &AuditFilter) -> Vec<SovdAuditEntry> {
+        let entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        let limit = filter.limit.unwrap_or(usize::MAX);
+
+        entries
+            .iter()
+            .filter(|e| {
+                if let Some(ref c) = filter.caller {
+                    if e.caller != *c {
+                        return false;
+                    }
+                }
+                if let Some(ref a) = filter.action {
+                    if e.action != *a {
+                        return false;
+                    }
+                }
+                if let Some(ref t) = filter.target {
+                    if !e.target.starts_with(t.as_str()) {
+                        return false;
+                    }
+                }
+                if let Some(ref o) = filter.outcome {
+                    if e.outcome != *o {
+                        return false;
+                    }
+                }
+                true
+            })
+            .rev()
+            .take(limit)
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect()
+    }
+
+    /// Get the most recent N entries.
+    pub fn recent(&self, count: usize) -> Vec<SovdAuditEntry> {
+        let entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        entries
+            .iter()
+            .rev()
+            .take(count)
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect()
+    }
+
+    /// Total number of entries currently in the in-memory buffer.
+    pub fn len(&self) -> usize {
+        self.entries.lock().unwrap_or_else(|e| e.into_inner()).len()
+    }
+
+    /// Whether the in-memory buffer is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Whether the audit log is enabled.
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    /// Flush the file sink (if any). Called during graceful shutdown to ensure
+    /// all buffered audit entries are persisted before the process exits.
+    pub fn flush(&self) {
+        if let Some(ref sink) = self.file_sink {
+            if let Ok(mut writer) = sink.lock() {
+                let _ = writer.flush();
+                debug!("Audit log file sink flushed");
+            }
+        }
+    }
+}
+
+impl Default for AuditLog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    fn make_log() -> AuditLog {
+        AuditLog::new()
+    }
+
+    fn record_sample(log: &AuditLog, caller: &str, action: SovdAuditAction, target: &str) {
+        log.record(caller, action, target, "data", "GET", "success", None, None);
+    }
+
+    #[test]
+    fn record_and_retrieve() {
+        let log = make_log();
+        record_sample(&log, "user-1", SovdAuditAction::ReadData, "component/hpc");
+        record_sample(&log, "user-2", SovdAuditAction::WriteData, "component/hpc");
+        assert_eq!(log.len(), 2);
+
+        let all = log.query(&AuditFilter::default());
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].caller, "user-1");
+        assert_eq!(all[1].caller, "user-2");
+    }
+
+    #[test]
+    fn sequence_numbers_are_monotonic() {
+        let log = make_log();
+        record_sample(&log, "u", SovdAuditAction::ReadData, "c/hpc");
+        record_sample(&log, "u", SovdAuditAction::WriteData, "c/hpc");
+        record_sample(&log, "u", SovdAuditAction::ClearFaults, "c/brake");
+
+        let all = log.query(&AuditFilter::default());
+        assert_eq!(all[0].seq, 1);
+        assert_eq!(all[1].seq, 2);
+        assert_eq!(all[2].seq, 3);
+    }
+
+    #[test]
+    fn filter_by_caller() {
+        let log = make_log();
+        record_sample(&log, "alice", SovdAuditAction::ReadData, "c/hpc");
+        record_sample(&log, "bob", SovdAuditAction::ReadData, "c/hpc");
+        record_sample(&log, "alice", SovdAuditAction::WriteData, "c/hpc");
+
+        let filter = AuditFilter {
+            caller: Some("alice".into()),
+            ..Default::default()
+        };
+        let results = log.query(&filter);
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|e| e.caller == "alice"));
+    }
+
+    #[test]
+    fn filter_by_action() {
+        let log = make_log();
+        record_sample(&log, "u", SovdAuditAction::ReadData, "c/hpc");
+        record_sample(&log, "u", SovdAuditAction::WriteData, "c/hpc");
+        record_sample(&log, "u", SovdAuditAction::ReadData, "c/brake");
+
+        let filter = AuditFilter {
+            action: Some(SovdAuditAction::ReadData),
+            ..Default::default()
+        };
+        let results = log.query(&filter);
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn filter_by_target_prefix() {
+        let log = make_log();
+        record_sample(&log, "u", SovdAuditAction::ReadData, "component/hpc");
+        record_sample(&log, "u", SovdAuditAction::ReadData, "component/brake");
+        record_sample(&log, "u", SovdAuditAction::ReadData, "app/health");
+
+        let filter = AuditFilter {
+            target: Some("component/".into()),
+            ..Default::default()
+        };
+        let results = log.query(&filter);
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn filter_by_outcome() {
+        let log = make_log();
+        log.record("u", SovdAuditAction::ReadData, "c/hpc", "data", "GET", "success", None, None);
+        log.record("u", SovdAuditAction::WriteData, "c/hpc", "data", "PUT", "denied", None, None);
+        log.record("u", SovdAuditAction::ReadData, "c/hpc", "data", "GET", "error", None, None);
+
+        let filter = AuditFilter {
+            outcome: Some("success".into()),
+            ..Default::default()
+        };
+        assert_eq!(log.query(&filter).len(), 1);
+    }
+
+    #[test]
+    fn filter_with_limit() {
+        let log = make_log();
+        for i in 0..10 {
+            record_sample(&log, &format!("u{i}"), SovdAuditAction::ReadData, "c/hpc");
+        }
+
+        let filter = AuditFilter {
+            limit: Some(3),
+            ..Default::default()
+        };
+        let results = log.query(&filter);
+        assert_eq!(results.len(), 3);
+        // Should return the last 3 (most recent)
+        assert_eq!(results[0].caller, "u7");
+        assert_eq!(results[2].caller, "u9");
+    }
+
+    #[test]
+    fn evicts_oldest_when_full() {
+        let config = AuditLogConfig {
+            enabled: true,
+            max_entries: 3,
+            file_path: None,
+        };
+        let log = AuditLog::from_config(&config);
+        record_sample(&log, "a", SovdAuditAction::ReadData, "c");
+        record_sample(&log, "b", SovdAuditAction::ReadData, "c");
+        record_sample(&log, "c", SovdAuditAction::ReadData, "c");
+        record_sample(&log, "d", SovdAuditAction::ReadData, "c");
+        assert_eq!(log.len(), 3);
+
+        let all = log.query(&AuditFilter::default());
+        assert_eq!(all[0].caller, "b");
+        assert_eq!(all[2].caller, "d");
+    }
+
+    #[test]
+    fn recent_returns_last_n() {
+        let log = make_log();
+        for i in 0..10 {
+            record_sample(&log, &format!("u{i}"), SovdAuditAction::ReadData, "c");
+        }
+        let recent = log.recent(3);
+        assert_eq!(recent.len(), 3);
+        assert_eq!(recent[0].caller, "u7");
+        assert_eq!(recent[2].caller, "u9");
+    }
+
+    #[test]
+    fn disabled_log_does_not_record() {
+        let config = AuditLogConfig {
+            enabled: false,
+            max_entries: 100,
+            file_path: None,
+        };
+        let log = AuditLog::from_config(&config);
+        record_sample(&log, "u", SovdAuditAction::ReadData, "c");
+        assert!(log.is_empty());
+        assert!(!log.is_enabled());
+    }
+
+    #[test]
+    fn detail_and_trace_id_are_recorded() {
+        let log = make_log();
+        log.record(
+            "admin",
+            SovdAuditAction::ClearFaults,
+            "component/brake",
+            "faults",
+            "DELETE",
+            "success",
+            Some("Cleared 3 DTCs"),
+            Some("abc123"),
+        );
+        let entry = &log.query(&AuditFilter::default())[0];
+        assert_eq!(entry.detail.as_deref(), Some("Cleared 3 DTCs"));
+        assert_eq!(entry.trace_id.as_deref(), Some("abc123"));
+    }
+
+    #[test]
+    fn entry_serializes_to_json() {
+        let log = make_log();
+        log.record(
+            "tech",
+            SovdAuditAction::InstallPackage,
+            "component/hpc",
+            "software-packages/pkg-1",
+            "POST",
+            "success",
+            None,
+            None,
+        );
+        let entry = &log.query(&AuditFilter::default())[0];
+        let json = serde_json::to_string(entry).unwrap();
+        assert!(json.contains("\"installPackage\""));
+        assert!(json.contains("\"component/hpc\""));
+        assert!(!json.contains("\"detail\"")); // None fields skipped
+    }
+
+    #[test]
+    fn file_sink_writes_jsonl() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("audit.jsonl");
+        let config = AuditLogConfig {
+            enabled: true,
+            max_entries: 100,
+            file_path: Some(path.to_string_lossy().into_owned()),
+        };
+        let log = AuditLog::from_config(&config);
+        record_sample(&log, "u1", SovdAuditAction::ReadData, "c/hpc");
+        record_sample(&log, "u2", SovdAuditAction::WriteData, "c/hpc");
+
+        // Read file and verify
+        let content = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 2);
+
+        // Each line should be valid JSON
+        let entry: SovdAuditEntry = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(entry.caller, "u1");
+    }
+}

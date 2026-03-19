@@ -24,7 +24,8 @@
 // The OemProfile trait hierarchy (defined in native-interfaces/src/oem.rs):
 //
 //   OemProfile
-//     ├── AuthPolicy         — Authentication & authorization rules
+//     ├── AuthPolicy         — Authentication & token validation rules
+//     ├── AuthzPolicy        — Fine-grained authorization (per-resource/entity)
 //     ├── EntityIdPolicy     — Entity identifier validation rules
 //     ├── DiscoveryPolicy    — Which SOVD entity types are exposed
 //     └── CdfPolicy          — Capability Description File (OpenAPI) extensions
@@ -34,7 +35,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 use native_interfaces::oem::{
-    AuthPolicy, CdfPolicy, DiscoveryPolicy, EntityIdPolicy, OemProfile,
+    AuthPolicy, AuthzPolicy, CdfPolicy, DiscoveryPolicy, EntityIdPolicy, OemProfile,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -342,6 +343,91 @@ impl CdfPolicy for SampleOemProfile {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// AuthzPolicy — Fine-Grained Authorization (Wave 1)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// This sub-trait is called AFTER successful authentication to decide whether
+// the caller is allowed to perform the specific action on the specific resource.
+//
+// The `AuthzContext` provides semantic fields parsed from the route template:
+//   • caller, roles, scopes  — who is making the request
+//   • method                 — HTTP method (GET, POST, PUT, DELETE, PATCH)
+//   • entity_type, entity_id — what entity is being accessed
+//   • resource, resource_id  — which sub-resource (data, faults, operations, ...)
+//
+// CUSTOMIZATION POINTS:
+//
+//   ┌─────────────────────────────────────────────────────────────────────────┐
+//   │ Example: Role-based read-only policy                                    │
+//   │                                                                         │
+//   │   fn authorize(&self, ctx: &AuthzContext) -> AuthzDecision {            │
+//   │       // "reader" role can only GET, never write/execute/delete         │
+//   │       if ctx.roles.contains(&"reader".to_owned())                      │
+//   │           && ctx.method != "GET"                                       │
+//   │       {                                                                 │
+//   │           return AuthzDecision::Deny {                                  │
+//   │               status: 403,                                              │
+//   │               code: "SOVD-ERR-403".into(),                             │
+//   │               message: "Read-only role cannot modify resources".into(), │
+//   │           };                                                            │
+//   │       }                                                                 │
+//   │       AuthzDecision::Allow                                              │
+//   │   }                                                                     │
+//   └─────────────────────────────────────────────────────────────────────────┘
+//
+//   MORE EXAMPLES:
+//
+//   • Restrict fault clearing to "admin" role:
+//       if ctx.resource == "faults" && ctx.method == "DELETE"
+//          && !ctx.roles.contains(&"admin".to_owned()) { Deny }
+//
+//   • Block software-package installs without "ota_manager" scope:
+//       if ctx.resource == "software-packages" && ctx.method == "POST"
+//          && !ctx.scopes.contains(&"ota_manager".to_owned()) { Deny }
+//
+//   • Restrict access to specific components:
+//       if let Some(ref id) = ctx.entity_id {
+//           if !self.allowed_components.contains(id) { Deny }
+//       }
+
+impl AuthzPolicy for SampleOemProfile {
+    // ── EXAMPLE: Role-based read-only policy ───────────────────────────
+    //
+    // fn authorize(&self, ctx: &AuthzContext) -> AuthzDecision {
+    //     // Users with only the "reader" role may not write, execute, or delete
+    //     if ctx.roles.contains(&"reader".to_owned())
+    //         && !ctx.roles.contains(&"writer".to_owned())
+    //         && !ctx.roles.contains(&"admin".to_owned())
+    //         && ctx.method != "GET"
+    //     {
+    //         return AuthzDecision::Deny {
+    //             status: 403,
+    //             code: "SOVD-ERR-403".into(),
+    //             message: "Read-only role cannot modify resources".into(),
+    //         };
+    //     }
+    //
+    //     // Admin can do everything
+    //     if ctx.roles.contains(&"admin".to_owned()) {
+    //         return AuthzDecision::Allow;
+    //     }
+    //
+    //     // Block software-package installs without "ota_manager" scope
+    //     // if ctx.resource == "software-packages" && ctx.method == "POST"
+    //     //     && !ctx.scopes.contains(&"ota_manager".to_owned())
+    //     // {
+    //     //     return AuthzDecision::Deny {
+    //     //         status: 403,
+    //     //         code: "SOVD-ERR-403".into(),
+    //     //         message: "OTA manager scope required".into(),
+    //     //     };
+    //     // }
+    //
+    //     AuthzDecision::Allow
+    // }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // OemProfile — Combine all sub-traits
 // ─────────────────────────────────────────────────────────────────────────────
 //
@@ -358,6 +444,7 @@ impl CdfPolicy for SampleOemProfile {
 //
 //   AppState.oem_profile ──┬── entity_id_validation_middleware (EntityIdPolicy)
 //                          ├── auth_middleware via AuthState    (AuthPolicy)
+//                          ├── authz check in auth_middleware   (AuthzPolicy)
 //                          ├── serve_docs / openapi builder    (CdfPolicy)
 //                          └── route handlers                  (DiscoveryPolicy)
 
@@ -371,6 +458,9 @@ impl OemProfile for SampleOemProfile {
     }
 
     fn as_auth_policy(&self) -> &dyn AuthPolicy {
+        self
+    }
+    fn as_authz_policy(&self) -> &dyn AuthzPolicy {
         self
     }
     fn as_entity_id_policy(&self) -> &dyn EntityIdPolicy {
@@ -391,7 +481,10 @@ impl OemProfile for SampleOemProfile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use native_interfaces::oem::{AuthPolicy, CdfPolicy, DiscoveryPolicy, EntityIdPolicy};
+    use native_interfaces::oem::{
+        AuthPolicy, AuthzContext, AuthzDecision, AuthzPolicy, CdfPolicy, DiscoveryPolicy,
+        EntityIdPolicy,
+    };
 
     #[test]
     fn sample_profile_uses_standard_defaults() {
@@ -423,5 +516,22 @@ mod tests {
         let p = SampleOemProfile;
         assert_eq!(p.name(), "Sample OEM Profile (standard SOVD)");
         assert_eq!(p.id(), "sample");
+    }
+
+    #[test]
+    fn sample_profile_authz_allows_everything() {
+        let p = SampleOemProfile;
+        let ctx = AuthzContext {
+            caller: "test-user".into(),
+            roles: vec!["reader".into()],
+            scopes: vec![],
+            method: "DELETE".into(),
+            entity_type: "component".into(),
+            entity_id: Some("hpc".into()),
+            resource: "faults".into(),
+            resource_id: None,
+            path: "/sovd/v1/components/hpc/faults".into(),
+        };
+        assert!(matches!(p.authorize(&ctx), AuthzDecision::Allow));
     }
 }

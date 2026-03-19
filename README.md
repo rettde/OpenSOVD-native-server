@@ -227,6 +227,51 @@ Environment variable overrides: `SOVD__SERVER__PORT=9090`, `SOVD__LOGGING__LEVEL
 - [COVESA/vsomeip](https://github.com/COVESA/vsomeip) — SOME/IP reference implementation
 - [eclipse-score](https://github.com/eclipse-score) — S-CORE platform (Fault API, Persistency, Logging)
 
+## Feature Roadmap
+
+The SOVD standard and the broader ecosystem (Eclipse OpenSOVD, vendor implementations, ASAM direction)
+point toward a clear evolution: from a standards-compliant REST gateway toward a **policy-driven,
+enterprise-ready diagnostic platform** for software-defined vehicles and HPC architectures.
+This roadmap captures the planned expansion in four waves.
+
+| Wave | Theme | Target scope |
+|------|-------|--------------|
+| **Wave 1** | Security & entity model | Fine-grained authz, audit trail, full `apps`/`funcs` support, software-package lifecycle |
+| **Wave 2** | HPC diagnostics & history | KPI/process/system-info resources, historical diagnostic storage, fault debouncing |
+| **Wave 3** | Enterprise & fleet | Cloud bridge mode, multi-tenant model, variant-aware discovery, zero-trust hardening |
+| **Wave 4** | Ecosystem integration | UDS2SOVD compatibility layer, service-app plugin ecosystem, advanced OTA orchestration |
+
+### Wave 1 — Security & Entity Model
+
+- **Fine-grained authorization** — Per-resource, per-operation, and per-entity policies beyond token-level auth.
+- **Diagnostic audit trail** — Tamper-resistant log of who read, wrote, executed, or cleared what.
+- **Full `apps` / `funcs` entities** — Promote the current stubs to real entity collections with nested resources.
+- **Software-package lifecycle** — Manifest upload, progress tracking, rollback policy, and OTA status model.
+
+### Wave 2 — HPC Diagnostics & History
+
+- **KPI / system-info resources** — Expose CPU, memory, process, and service-level metrics as SOVD data resources.
+- **Historical diagnostic storage** — Persist fault and KPI history for correlation and trend analysis.
+- **Fault debouncing & operation cycles** — Suppress transient faults during expected phases (startup, update).
+- **Time-based monitoring** — Periodic sampling and threshold-based alerting for HPC health indicators.
+
+### Wave 3 — Enterprise & Fleet
+
+- **Cloud bridge mode** — Brokered remote access without exposing vehicles directly to the public internet.
+- **Multi-tenant / workshop isolation** — Tenant boundaries for fleet operators, suppliers, and workshops.
+- **Variant-aware discovery** — Installation-variant and software-variant differentiation in capabilities and CDF.
+- **Zero-trust hardening** — End-to-end mutual authentication and dynamic, fine-grained permission management.
+
+### Wave 4 — Ecosystem Integration
+
+- **UDS2SOVD compatibility layer** — Allow legacy UDS-based testers to interact with the SOVD stack.
+- **Service App plugin model** — Clean abstraction for OEM-specific diagnostic routines (flash master, DTC clear, inspections).
+- **Advanced OTA orchestration** — Uptane-aligned update workflows with campaign management and rollout policies.
+- **ML/predictive maintenance interfaces** — Stable KPI/history APIs for external analytics without embedding ML in the server core.
+
+> For the full research, gap analysis, and prioritization behind this roadmap see
+> [docs/sovd-server-feature-inspiration.md](docs/sovd-server-feature-inspiration.md).
+
 ## License
 
 [Apache-2.0](LICENSE)

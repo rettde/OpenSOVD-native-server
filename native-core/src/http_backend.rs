@@ -589,6 +589,7 @@ impl ComponentBackend for SovdHttpBackend {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use native_interfaces::ComponentBackend;
