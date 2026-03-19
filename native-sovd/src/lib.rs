@@ -21,6 +21,7 @@ pub mod dlt;
 pub mod mdns;
 pub mod oem_sample;
 pub mod openapi;
+pub mod rate_limit;
 pub mod routes;
 pub mod state;
 
@@ -32,10 +33,11 @@ pub mod state;
 pub mod oem_mbds;
 
 pub use auth::AuthConfig;
-pub use dlt::{DltConfig, DltLayer};
+pub use dlt::{DltConfig, DltTextLayer};
 pub use mdns::{MdnsConfig, MdnsHandle};
 #[cfg(has_oem_mbds)]
 pub use oem_mbds::{MbdsProfile, MbdsProfileConfig};
 pub use oem_sample::SampleOemProfile;
+pub use rate_limit::{RateLimitConfig, RateLimiter};
 pub use routes::build_router;
 pub use state::{AppState, DiagState, RuntimeState, SecurityState};

@@ -77,9 +77,17 @@ toml = "0.8"
 # ── Tracing & Logging (matching CDA: tracing ecosystem) ─────────────────────
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false }
+# ── OpenTelemetry (optional OTLP export, A2.4) ─────────────────────────────
+opentelemetry = { version = "0.27", default-features = false, features = ["trace"] }
+opentelemetry_sdk = { version = "0.27", default-features = false, features = ["trace", "rt-tokio"] }
+opentelemetry-otlp = { version = "0.27", default-features = false, features = ["trace", "grpc-tonic"] }
+tracing-opentelemetry = "0.28"
 
 # ── Health monitoring ────────────────────────────────────────────────────────
 sysinfo = "0.30"
+
+# ── Cryptographic hashing (audit log chain integrity) ───────────────────────
+sha2 = "0.10"
 
 # ── Persistence ─────────────────────────────────────────────────────────────
 sled = "0.34"

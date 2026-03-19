@@ -5,7 +5,7 @@
 
 [package]
 name = "native-comm-someip"
-version = "0.6.0"
+version = "0.8.0"
 edition.workspace = true
 license.workspace = true
 homepage.workspace = true

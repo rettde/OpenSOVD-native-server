@@ -441,7 +441,7 @@ pub enum SovdLogLevel {
 
 // ── Mode / Session (SOVD Standard §7.6) ──────────────────────────────────
 
-/// SOVD diagnostic mode/session
+/// SOVD diagnostic mode/session (W2.4 enriched model)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SovdMode {
     #[serde(rename = "componentId")]
@@ -450,6 +450,43 @@ pub struct SovdMode {
     pub current_mode: String,
     #[serde(rename = "availableModes")]
     pub available_modes: Vec<String>,
+    /// Detailed mode descriptors (W2.4) — optional for backward compat
+    #[serde(
+        rename = "modeDescriptors",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub mode_descriptors: Vec<SovdModeDescriptor>,
+    /// ISO 8601 timestamp when the current mode was activated
+    #[serde(
+        rename = "activeSince",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub active_since: Option<String>,
+}
+
+/// Describes a single SOVD mode with its UDS session mapping (W2.4).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SovdModeDescriptor {
+    /// Mode identifier (e.g. "default", "extended", "programming")
+    pub id: String,
+    /// Human-readable display name
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Description of what this mode enables
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// UDS session type this mode maps to (e.g. 0x01 = default, 0x02 = programming, 0x03 = extended)
+    #[serde(
+        rename = "udsSession",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub uds_session: Option<u8>,
+    /// Whether this mode requires security access (UDS 0x27)
+    #[serde(rename = "requiresSecurityAccess", default)]
+    pub requires_security_access: bool,
 }
 
 // ── Configuration (SOVD Standard §7.8) ───────────────────────────────────
@@ -660,6 +697,13 @@ pub struct SovdAuditEntry {
     /// W3C trace ID for correlation with distributed tracing
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trace_id: Option<String>,
+    /// SHA-256 hash of the previous entry (hash chain for tamper detection).
+    /// First entry uses `"genesis"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prev_hash: Option<String>,
+    /// SHA-256 hash of this entry (computed over all fields except `hash` itself).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hash: Option<String>,
 }
 
 #[cfg(test)]
@@ -1026,12 +1070,25 @@ mod tests {
             component_id: "hpc".into(),
             current_mode: "default".into(),
             available_modes: vec!["default".into(), "extended".into(), "programming".into()],
+            mode_descriptors: vec![SovdModeDescriptor {
+                id: "extended".into(),
+                name: Some("Extended Diagnostic".into()),
+                description: Some("UDS extended session".into()),
+                uds_session: Some(0x03),
+                requires_security_access: false,
+            }],
+            active_since: Some("2026-01-01T00:00:00Z".into()),
         };
         let json = serde_json::to_string(&mode).unwrap();
         assert!(json.contains("\"currentMode\""));
         assert!(json.contains("\"availableModes\""));
+        assert!(json.contains("\"modeDescriptors\""));
+        assert!(json.contains("\"udsSession\""));
+        assert!(json.contains("\"activeSince\""));
         let deser: SovdMode = serde_json::from_str(&json).unwrap();
         assert_eq!(deser.available_modes.len(), 3);
+        assert_eq!(deser.mode_descriptors.len(), 1);
+        assert_eq!(deser.mode_descriptors[0].uds_session, Some(0x03));
     }
 
     #[test]

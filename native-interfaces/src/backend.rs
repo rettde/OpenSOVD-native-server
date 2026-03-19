@@ -211,54 +211,97 @@ pub trait ComponentBackend: Send + Sync {
     ) -> Result<SovdSoftwarePackage, DiagServiceError> {
         Err(DiagServiceError::NotFound(Some("package not found".into())))
     }
+}
 
-    // ── Extended Diagnostics (vendor extensions, x-prefixed) ────────────────
+// ── Extended Diagnostics (vendor extensions, x-prefixed) ─────────────────
+
+/// Backend abstraction for UDS-specific vendor extension methods.
+///
+/// Extracted from `ComponentBackend` (A2.2 trait diet) so that non-UDS
+/// backends (e.g. cloud adapters, KPI providers) don't need to stub out
+/// 7 methods they'll never support.  All methods have default "not
+/// supported" implementations.
+///
+/// Routes under `/sovd/v1/x-uds/…` use this trait.
+#[async_trait]
+pub trait ExtendedDiagBackend: Send + Sync {
+    /// Whether this backend handles extended diagnostics for the given component.
+    /// Used by the router to dispatch x-uds requests.
+    fn handles_component(&self, _component_id: &str) -> bool {
+        false
+    }
 
     /// I/O control on a data identifier
     async fn io_control(
         &self,
-        component_id: &str,
-        data_id: &str,
-        control: &str,
-        value: Option<&[u8]>,
-    ) -> Result<serde_json::Value, DiagServiceError>;
+        _component_id: &str,
+        _data_id: &str,
+        _control: &str,
+        _value: Option<&[u8]>,
+    ) -> Result<serde_json::Value, DiagServiceError> {
+        Err(DiagServiceError::RequestNotSupported(
+            "io_control not supported by this backend".into(),
+        ))
+    }
 
     /// Communication control (enable/disable Rx/Tx)
     async fn communication_control(
         &self,
-        component_id: &str,
-        control_type: &str,
-        communication_type: u8,
-    ) -> Result<(), DiagServiceError>;
+        _component_id: &str,
+        _control_type: &str,
+        _communication_type: u8,
+    ) -> Result<(), DiagServiceError> {
+        Err(DiagServiceError::RequestNotSupported(
+            "communication_control not supported by this backend".into(),
+        ))
+    }
 
     /// DTC setting control (on/off)
-    async fn dtc_setting(&self, component_id: &str, setting: &str) -> Result<(), DiagServiceError>;
+    async fn dtc_setting(
+        &self,
+        _component_id: &str,
+        _setting: &str,
+    ) -> Result<(), DiagServiceError> {
+        Err(DiagServiceError::RequestNotSupported(
+            "dtc_setting not supported by this backend".into(),
+        ))
+    }
 
     /// Read raw memory from a component
     async fn read_memory(
         &self,
-        component_id: &str,
-        address: u32,
-        size: u32,
-    ) -> Result<Vec<u8>, DiagServiceError>;
+        _component_id: &str,
+        _address: u32,
+        _size: u32,
+    ) -> Result<Vec<u8>, DiagServiceError> {
+        Err(DiagServiceError::RequestNotSupported(
+            "read_memory not supported by this backend".into(),
+        ))
+    }
 
     /// Write raw memory to a component
     async fn write_memory(
         &self,
-        component_id: &str,
-        address: u32,
-        data: &[u8],
-    ) -> Result<(), DiagServiceError>;
+        _component_id: &str,
+        _address: u32,
+        _data: &[u8],
+    ) -> Result<(), DiagServiceError> {
+        Err(DiagServiceError::RequestNotSupported(
+            "write_memory not supported by this backend".into(),
+        ))
+    }
 
     /// Flash firmware to a component, returns result as JSON
     async fn flash(
         &self,
-        component_id: &str,
-        firmware: &[u8],
-        memory_address: u32,
-    ) -> Result<serde_json::Value, DiagServiceError>;
-
-    // ── Keepalive / status ──────────────────────────────────────────────────
+        _component_id: &str,
+        _firmware: &[u8],
+        _memory_address: u32,
+    ) -> Result<serde_json::Value, DiagServiceError> {
+        Err(DiagServiceError::RequestNotSupported(
+            "flash not supported by this backend".into(),
+        ))
+    }
 
     /// Get list of component IDs with active keepalive sessions
     fn active_keepalives(&self) -> Vec<String> {

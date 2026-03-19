@@ -419,6 +419,8 @@ impl ComponentBackend for SovdHttpBackend {
             component_id: component_id.to_owned(),
             current_mode: "unknown".to_owned(),
             available_modes: vec!["default".into(), "extended".into(), "programming".into()],
+            mode_descriptors: vec![],
+            active_since: None,
         })
     }
 
@@ -492,6 +494,15 @@ impl ComponentBackend for SovdHttpBackend {
             .iter()
             .find(|g| g.id == group_id)
             .cloned()
+    }
+}
+
+// ── ExtendedDiagBackend — UDS vendor extension methods via HTTP ──────────
+
+#[async_trait]
+impl native_interfaces::ExtendedDiagBackend for SovdHttpBackend {
+    fn handles_component(&self, component_id: &str) -> bool {
+        ComponentBackend::handles_component(self, component_id)
     }
 
     async fn io_control(

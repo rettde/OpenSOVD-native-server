@@ -27,7 +27,7 @@ use native_core::{
 use native_health::HealthMonitor;
 use native_interfaces::ComponentBackend;
 use native_sovd::{
-    build_router, AppState, AuthConfig, DltConfig, DltLayer, MdnsConfig, MdnsHandle,
+    build_router, AppState, AuthConfig, DltConfig, DltTextLayer, MdnsConfig, MdnsHandle,
 };
 
 use native_comm_someip::{SomeIpConfig, SomeIpRuntime};
@@ -50,6 +50,8 @@ struct AppConfig {
     mdns: MdnsConfig,
     #[serde(default)]
     dlt: DltConfig,
+    #[serde(default)]
+    rate_limit: native_sovd::RateLimitConfig,
 
     // ── Backend configuration ───────────────────────────────────────────
     /// External SOVD backends (CDA instances, native SOVD endpoints)
@@ -89,12 +91,27 @@ impl Default for ServerConfig {
 #[derive(Debug, Deserialize)]
 struct LoggingConfig {
     level: String,
+    /// Log output format: "text" (default, human-readable) or "json" (structured, SIEM-ready)
+    #[serde(default = "LoggingConfig::default_format")]
+    format: String,
+    /// Optional OTLP endpoint for OpenTelemetry trace export (e.g. "http://localhost:4317").
+    /// Requires the `otlp` feature flag. Ignored when the feature is not enabled.
+    #[serde(default)]
+    otlp_endpoint: Option<String>,
+}
+
+impl LoggingConfig {
+    fn default_format() -> String {
+        "text".to_owned()
+    }
 }
 
 impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
             level: "info".to_owned(),
+            format: Self::default_format(),
+            otlp_endpoint: None,
         }
     }
 }
@@ -192,18 +209,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             serde_json::from_str("{}").unwrap()
         });
 
-    // Initialize tracing (with optional DLT layer)
+    // Initialize tracing (with optional DLT and OTLP layers)
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.logging.level));
-    let dlt_layer = DltLayer::new(&config.dlt);
+    let dlt_layer = DltTextLayer::new(&config.dlt);
+    let use_json = config.logging.format.eq_ignore_ascii_case("json");
+
+    // OTLP layer (A2.4) — only available with `otlp` feature flag
+    #[cfg(feature = "otlp")]
+    let otlp_layer = config.logging.otlp_endpoint.as_ref().map(|endpoint| {
+        use opentelemetry_otlp::WithExportConfig;
+        let exporter = opentelemetry_otlp::SpanExporter::builder()
+            .with_tonic()
+            .with_endpoint(endpoint)
+            .build()
+            .expect("OTLP exporter init failed");
+        let tracer = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+            .with_batch_exporter(exporter)
+            .build();
+        let layer = tracing_opentelemetry::layer().with_tracer(tracer.tracer("opensovd-native"));
+        info!(endpoint = %endpoint, "OpenTelemetry OTLP export enabled");
+        layer
+    });
+    #[cfg(not(feature = "otlp"))]
+    let otlp_layer: Option<tracing_subscriber::layer::Identity> = {
+        if config.logging.otlp_endpoint.is_some() {
+            eprintln!(
+                "Warning: otlp_endpoint configured but `otlp` feature not enabled — ignoring"
+            );
+        }
+        None
+    };
+
     {
         use tracing_subscriber::layer::SubscriberExt;
         use tracing_subscriber::util::SubscriberInitExt;
-        tracing_subscriber::registry()
-            .with(filter)
-            .with(fmt::layer())
-            .with(dlt_layer)
-            .init();
+        if use_json {
+            // Structured JSON logging with trace correlation (E1.2)
+            tracing_subscriber::registry()
+                .with(filter)
+                .with(fmt::layer().json().flatten_event(true).with_target(true))
+                .with(dlt_layer)
+                .with(otlp_layer)
+                .init();
+        } else {
+            tracing_subscriber::registry()
+                .with(filter)
+                .with(fmt::layer())
+                .with(dlt_layer)
+                .with(otlp_layer)
+                .init();
+        }
     }
 
     // ── Config validation (fail-fast) ─────────────────────────────────
@@ -224,6 +280,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ── Build backends (Gateway pattern) ────────────────────────────────
     let mut backends: Vec<Arc<dyn ComponentBackend>> = Vec::new();
+    let mut extended_backends: Vec<Arc<dyn native_interfaces::ExtendedDiagBackend>> = Vec::new();
 
     // 1. HTTP backends → external CDA / SOVD servers (standard-conformant)
     for backend_config in &config.backends {
@@ -248,7 +305,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "Failed to discover components (will retry on connect)"
             );
         }
-        backends.push(Arc::new(http_backend));
+        let backend = Arc::new(http_backend);
+        backends.push(backend.clone());
+        extended_backends.push(backend);
     }
 
     if backends.is_empty() {
@@ -256,7 +315,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // ── Build ComponentRouter (Gateway) ─────────────────────────────────
-    let router = Arc::new(ComponentRouter::new(backends));
+    let router = Arc::new(ComponentRouter::new(backends).with_extended(extended_backends));
     info!(
         components = router.list_components().len(),
         "Gateway initialized"
@@ -304,6 +363,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let state = AppState {
         backend: router.clone(),
+        extended_backend: router.clone(),
         entity_backend: router,
         diag: native_sovd::DiagState {
             fault_manager,
@@ -313,6 +373,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         security: native_sovd::SecurityState {
             oem_profile,
             audit_log: audit_log.clone(),
+            rate_limiter: if config.rate_limit.enabled {
+                info!(
+                    max_requests = config.rate_limit.max_requests,
+                    window_secs = config.rate_limit.window_secs,
+                    "Per-client rate limiting enabled"
+                );
+                Some(native_sovd::RateLimiter::new(&config.rate_limit))
+            } else {
+                None
+            },
         },
         runtime: native_sovd::RuntimeState {
             health,

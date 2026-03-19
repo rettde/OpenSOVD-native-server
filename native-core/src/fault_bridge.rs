@@ -14,9 +14,15 @@
 // stored in the FaultManager. This follows the OpenSOVD design where the DFM
 // aggregates faults from multiple sources (Fault Libraries across the system).
 //
-// Note: The actual fault-lib crate requires nightly Rust (edition 2024).
-// This bridge defines a compatible interface that can be connected when
-// the fault-lib stabilizes or when using nightly toolchains.
+// Note: The actual fault-lib crate requires nightly Rust (edition 2024,
+// `const_option_ops`, `const_trait_impl`). This bridge defines compatible
+// mirror types (`FaultSeverity`, `FaultLifecycleStage`, `FaultRecord`,
+// `FaultSink`, `FaultLogHook`) so we can build on stable Rust today.
+//
+// TODO(fault-lib-stable): When fault-lib drops nightly-only features,
+// replace the mirror types below with `fault_lib = { git = "..." }` and
+// keep only the FaultBridge adapter that maps FaultRecord → SovdFault.
+// Track: https://github.com/eclipse-opensovd/fault-lib
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::sync::Arc;

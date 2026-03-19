@@ -10,6 +10,23 @@
 // they are written to stderr in DLT text format.
 //
 //  Format:  <timestamp> <ecu_id> <app_id> <ctx_id> <level> <message>
+//
+// Relationship to eclipse-opensovd/dlt-tracing-lib:
+//   The shared `tracing-dlt` crate (https://github.com/eclipse-opensovd/dlt-tracing-lib)
+//   provides a full DLT binary-protocol layer backed by libdlt FFI bindings.
+//   It supports per-span DLT contexts, typed fields, and dynamic log-level
+//   callbacks from the DLT daemon. However, it requires:
+//     (a) nightly Rust (edition 2024)
+//     (b) libdlt installed on the target system (Linux only)
+//
+//   This `DltTextLayer` is a lightweight, dependency-free fallback that emits
+//   DLT-*text-format* records. It works on all platforms (macOS, CI, embedded)
+//   without a native C dependency.
+//
+// TODO(dlt-tracing-lib): When tracing-dlt reaches stable Rust, add a feature
+// flag `dlt-native` that pulls in the real `tracing-dlt` crate for Linux
+// targets, keeping `DltTextLayer` as the fallback for other platforms.
+// Track: https://github.com/eclipse-opensovd/dlt-tracing-lib
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::fmt::{self, Write as FmtWrite};
@@ -64,20 +81,25 @@ impl Default for DltConfig {
 }
 
 /// A `tracing_subscriber::Layer` that emits logs in DLT text format.
-pub struct DltLayer {
+///
+/// This is a lightweight fallback for environments without `libdlt`.
+/// For production Linux deployments, prefer the full `tracing-dlt` crate
+/// from <https://github.com/eclipse-opensovd/dlt-tracing-lib> which speaks
+/// proper DLT binary protocol.
+pub struct DltTextLayer {
     ecu_id: String,
     app_id: String,
     ctx_id: String,
-    writer: DltWriter,
+    writer: DltTextWriter,
 }
 
-enum DltWriter {
+enum DltTextWriter {
     Stderr,
     #[cfg(unix)]
     UnixSocket(std::sync::Mutex<std::os::unix::net::UnixDatagram>),
 }
 
-impl DltLayer {
+impl DltTextLayer {
     /// Create a new DLT layer from config.  Returns `None` if DLT is disabled.
     pub fn new(config: &DltConfig) -> Option<Self> {
         if !config.enabled {
@@ -90,20 +112,20 @@ impl DltLayer {
                 Ok(sock) => {
                     if sock.connect(path).is_ok() {
                         tracing::info!(path = %path, "DLT: connected to DLTDaemon socket");
-                        DltWriter::UnixSocket(std::sync::Mutex::new(sock))
+                        DltTextWriter::UnixSocket(std::sync::Mutex::new(sock))
                     } else {
                         tracing::warn!(path = %path, "DLT: failed to connect to daemon socket, falling back to stderr");
-                        DltWriter::Stderr
+                        DltTextWriter::Stderr
                     }
                 }
-                Err(_) => DltWriter::Stderr,
+                Err(_) => DltTextWriter::Stderr,
             },
             #[cfg(not(unix))]
             Some(_) => {
                 tracing::warn!("DLT: Unix sockets not available on this platform, using stderr");
-                DltWriter::Stderr
+                DltTextWriter::Stderr
             }
-            None => DltWriter::Stderr,
+            None => DltTextWriter::Stderr,
         };
 
         Some(Self {
@@ -116,11 +138,11 @@ impl DltLayer {
 
     fn write_record(&self, record: &str) {
         match &self.writer {
-            DltWriter::Stderr => {
+            DltTextWriter::Stderr => {
                 let _ = writeln!(std::io::stderr(), "{record}");
             }
             #[cfg(unix)]
-            DltWriter::UnixSocket(sock) => {
+            DltTextWriter::UnixSocket(sock) => {
                 if let Ok(s) = sock.lock() {
                     let _ = s.send(record.as_bytes());
                 }
@@ -140,7 +162,7 @@ fn dlt_level(level: tracing::Level) -> &'static str {
     }
 }
 
-impl<S> tracing_subscriber::Layer<S> for DltLayer
+impl<S> tracing_subscriber::Layer<S> for DltTextLayer
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
 {

@@ -21,7 +21,7 @@ use native_health::HealthMonitor;
 use native_interfaces::oem::OemProfile;
 use native_interfaces::sovd::SovdSoftwarePackage;
 use native_interfaces::sovd::{SovdOperationExecution, SovdProximityChallenge};
-use native_interfaces::{ComponentBackend, EntityBackend};
+use native_interfaces::{ComponentBackend, EntityBackend, ExtendedDiagBackend};
 
 // ── Sub-state: Diagnostics ──────────────────────────────────────────────────
 
@@ -38,13 +38,15 @@ pub struct DiagState {
 
 // ── Sub-state: Security ─────────────────────────────────────────────────────
 
-/// Security-related state: OEM policy profile, audit trail.
+/// Security-related state: OEM policy profile, audit trail, rate limiting.
 #[derive(Clone)]
 pub struct SecurityState {
     /// OEM profile — vendor-specific rules (auth, entity IDs, CDF, discovery)
     pub oem_profile: Arc<dyn OemProfile>,
     /// Audit trail — tamper-resistant log of security-relevant actions (Wave 1)
     pub audit_log: Arc<AuditLog>,
+    /// Per-client rate limiter (A2.5) — None if disabled
+    pub rate_limiter: Option<crate::rate_limit::RateLimiter>,
 }
 
 // ── Sub-state: Runtime ──────────────────────────────────────────────────────
@@ -73,6 +75,8 @@ pub struct RuntimeState {
 pub struct AppState {
     /// Gateway backend — dispatches to CDA (HTTP) or local UDS/DoIP
     pub backend: Arc<dyn ComponentBackend>,
+    /// Extended diagnostics backend — UDS vendor extensions (x-uds routes)
+    pub extended_backend: Arc<dyn ExtendedDiagBackend>,
     /// Entity backend — apps and funcs (ISO 17978-3 §4.2.3)
     pub entity_backend: Arc<dyn EntityBackend>,
     /// Diagnostic state: faults, locks, diagnostic logs

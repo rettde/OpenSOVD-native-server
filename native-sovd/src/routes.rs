@@ -54,6 +54,72 @@ async fn entity_id_validation_middleware(
     Ok(next.run(request).await)
 }
 
+/// Per-client rate limiting middleware (A2.5).
+///
+/// Extracts the caller identity (set by auth middleware via `AuthenticatedClient` extension)
+/// and checks the token-bucket rate limiter. Returns 429 Too Many Requests if the
+/// client has exceeded their quota.
+async fn rate_limit_middleware(
+    limiter: Option<crate::rate_limit::RateLimiter>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    if let Some(ref limiter) = limiter {
+        // Extract client ID from auth extension (set by auth_middleware)
+        let client_id = request
+            .extensions()
+            .get::<AuthenticatedClient>()
+            .map_or("anonymous", |c| c.0.as_str());
+
+        if !limiter.check(client_id) {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(SovdErrorEnvelope {
+                    error: SovdErrorResponse {
+                        code: "TooManyRequests".to_owned(),
+                        message: "Rate limit exceeded".to_owned(),
+                        target: None,
+                        details: vec![],
+                        innererror: None,
+                    },
+                }),
+            )
+                .into_response();
+        }
+    }
+    next.run(request).await
+}
+
+/// RED metrics middleware (E1.3) — records Rate, Error rate, Duration per endpoint.
+///
+/// Labels: `method`, `path` (matched route pattern), `status` (HTTP status code).
+/// Metrics:
+///   - `sovd_http_requests_total` (counter)
+///   - `sovd_http_request_duration_seconds` (histogram)
+async fn red_metrics_middleware(
+    matched_path: Option<axum::extract::MatchedPath>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let method = request.method().to_string();
+    let path = matched_path.map_or_else(
+        || request.uri().path().to_owned(),
+        |mp| mp.as_str().to_owned(),
+    );
+    let start = std::time::Instant::now();
+
+    let response = next.run(request).await;
+
+    let status = response.status().as_u16().to_string();
+    let duration = start.elapsed().as_secs_f64();
+    let labels = [("method", method), ("path", path), ("status", status)];
+
+    metrics::counter!("sovd_http_requests_total", &labels).increment(1);
+    metrics::histogram!("sovd_http_request_duration_seconds", &labels).record(duration);
+
+    response
+}
+
 /// Trace-ID propagation middleware (MBDS §8 / W3C Trace Context).
 /// Reads `traceparent` or `x-request-id` from request; if absent, generates a new UUID.
 /// Injects `traceparent` into every response for distributed tracing.
@@ -433,6 +499,8 @@ pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
         .route("/$metadata", get(odata_metadata))
         // Health (non-SOVD, operational)
         .route("/health", get(health_check))
+        // System KPIs (W2.1)
+        .route("/system-info", get(system_info))
         // Audit trail (Wave 1)
         .route("/audit", get(list_audit_entries));
 
@@ -523,6 +591,15 @@ pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
         // Kubernetes-style probes (public, outside auth)
         .route("/healthz", get(liveness_probe))
         .route("/readyz", get(readiness_probe))
+        .layer({
+            let limiter = state.security.rate_limiter.clone();
+            axum::middleware::from_fn(
+                move |request: axum::extract::Request, next: axum::middleware::Next| {
+                    let limiter = limiter.clone();
+                    rate_limit_middleware(limiter, request, next)
+                },
+            )
+        })
         .layer(axum::middleware::from_fn_with_state(
             AuthState {
                 config: auth_config,
@@ -538,6 +615,7 @@ pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
             },
         ))
         .layer(axum::middleware::from_fn(trace_id_middleware))
+        .layer(axum::middleware::from_fn(red_metrics_middleware))
         .layer(TraceLayer::new_for_http())
         .layer(concurrency_limit)
         .layer(TimeoutLayer::with_status_code(
@@ -1102,7 +1180,7 @@ async fn io_control(
         .map_err(|e| bad_request(&format!("Invalid hex value: {e}")))?;
 
     let result = state
-        .backend
+        .extended_backend
         .io_control(
             &component_id,
             &data_id,
@@ -1136,7 +1214,7 @@ async fn communication_control(
         .map_err(|_| bad_request("Invalid communication_type (expected hex byte, e.g. '01')"))?;
 
     state
-        .backend
+        .extended_backend
         .communication_control(&component_id, &body.control_type, comm_type)
         .await
         .map_err(|ref e| diag_error(e))?;
@@ -1160,7 +1238,7 @@ async fn control_dtc_setting(
 ) -> Result<StatusCode, (StatusCode, Json<SovdErrorEnvelope>)> {
     require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
     state
-        .backend
+        .extended_backend
         .dtc_setting(&component_id, &body.setting)
         .await
         .map_err(|ref e| diag_error(e))?;
@@ -1193,7 +1271,7 @@ async fn read_memory(
     .map_err(|_| bad_request("Invalid address (expected hex, e.g. 0x20000000)"))?;
 
     let data = state
-        .backend
+        .extended_backend
         .read_memory(&component_id, address, query.size)
         .await
         .map_err(|ref e| diag_error(e))?;
@@ -1233,7 +1311,7 @@ async fn write_memory(
         hex::decode(&body.value).map_err(|e| bad_request(&format!("Invalid hex value: {e}")))?;
 
     state
-        .backend
+        .extended_backend
         .write_memory(&component_id, address, &data)
         .await
         .map_err(|ref e| diag_error(e))?;
@@ -1269,7 +1347,7 @@ async fn start_flash(
     }
 
     let result = state
-        .backend
+        .extended_backend
         .flash(&component_id, &firmware, body.memory_address)
         .await
         .map_err(|ref e| diag_error(e))?;
@@ -1289,7 +1367,7 @@ async fn start_flash(
 // ── Keepalive ───────────────────────────────────────────────────────────────
 
 async fn keepalive_status(State(state): State<AppState>) -> Json<serde_json::Value> {
-    let active = state.backend.active_keepalives();
+    let active = state.extended_backend.active_keepalives();
     Json(serde_json::json!({
         "active": active,
         "count": active.len(),
@@ -1301,6 +1379,39 @@ async fn keepalive_status(State(state): State<AppState>) -> Json<serde_json::Val
 async fn health_check(State(state): State<AppState>) -> Json<serde_json::Value> {
     let info = state.runtime.health.system_info();
     Json(info)
+}
+
+/// W2.1 — aggregated system KPIs: health, faults, audit, rate limiter, components.
+async fn system_info(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let health = state.runtime.health.system_info();
+    let component_count = state.backend.list_components().len();
+    let fault_count = state.diag.fault_manager.total_fault_count();
+    let audit_count = state.security.audit_log.len();
+    let audit_chain = state.security.audit_log.verify_chain().map_or_else(
+        |e| serde_json::json!({"status": "broken", "error": e}),
+        |n| serde_json::json!({"status": "ok", "verified": n}),
+    );
+
+    let rate_limiter_info = state.security.rate_limiter.as_ref().map(|rl| {
+        serde_json::json!({
+            "tracked_clients": rl.client_count(),
+        })
+    });
+
+    Json(serde_json::json!({
+        "health": health,
+        "components": {
+            "count": component_count,
+        },
+        "faults": {
+            "active_count": fault_count,
+        },
+        "audit": {
+            "entry_count": audit_count,
+            "chain_integrity": audit_chain,
+        },
+        "rate_limiter": rate_limiter_info,
+    }))
 }
 
 // ── Kubernetes-style probes (outside auth, at root level) ────────────────────
@@ -1885,18 +1996,18 @@ async fn activate_mode(
 ) -> Result<Json<SovdMode>, (StatusCode, Json<SovdErrorEnvelope>)> {
     require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
 
-    // Map DTC setting modes to backend dtc_setting (Item 7: dtc-setting → modes)
+    // Map DTC setting modes to extended backend (Item 7: dtc-setting → modes)
     match mode_id.as_str() {
         "dtc-on" => {
             state
-                .backend
+                .extended_backend
                 .dtc_setting(&component_id, "on")
                 .await
                 .map_err(|ref e| diag_error(e))?;
         }
         "dtc-off" => {
             state
-                .backend
+                .extended_backend
                 .dtc_setting(&component_id, "off")
                 .await
                 .map_err(|ref e| diag_error(e))?;
@@ -2449,6 +2560,8 @@ mod tests {
                 component_id: component_id.into(),
                 current_mode: "default".into(),
                 available_modes: vec!["default".into(), "extended".into(), "programming".into()],
+                mode_descriptors: vec![],
+                active_since: None,
             })
         }
         async fn set_mode(
@@ -2508,6 +2621,13 @@ mod tests {
         fn get_group(&self, group_id: &str) -> Option<native_interfaces::sovd::SovdGroup> {
             self.list_groups().into_iter().find(|g| g.id == group_id)
         }
+    }
+
+    #[async_trait::async_trait]
+    impl native_interfaces::ExtendedDiagBackend for MockBackend {
+        fn handles_component(&self, component_id: &str) -> bool {
+            native_interfaces::ComponentBackend::handles_component(self, component_id)
+        }
         async fn io_control(
             &self,
             _: &str,
@@ -2566,11 +2686,14 @@ mod tests {
         use native_health::HealthMonitor;
         use std::sync::Arc;
 
-        let mock: Arc<dyn native_interfaces::ComponentBackend> = Arc::new(MockBackend);
-        let router = Arc::new(ComponentRouter::new(vec![mock]));
+        let mock = Arc::new(MockBackend);
+        let mock_ext: Arc<dyn native_interfaces::ExtendedDiagBackend> = mock.clone();
+        let mock_comp: Arc<dyn native_interfaces::ComponentBackend> = mock;
+        let router = Arc::new(ComponentRouter::new(vec![mock_comp]).with_extended(vec![mock_ext]));
 
         AppState {
             backend: router.clone(),
+            extended_backend: router.clone(),
             entity_backend: router,
             diag: DiagState {
                 fault_manager: Arc::new(FaultManager::new()),
@@ -2580,6 +2703,7 @@ mod tests {
             security: SecurityState {
                 oem_profile: Arc::new(native_interfaces::DefaultProfile),
                 audit_log: Arc::new(AuditLog::new()),
+                rate_limiter: None,
             },
             runtime: RuntimeState {
                 health: Arc::new(HealthMonitor::new()),
@@ -3101,6 +3225,30 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn system_info_returns_kpi_fields() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/system-info")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json.get("health").is_some());
+        assert!(json.get("components").is_some());
+        assert!(json.get("faults").is_some());
+        assert!(json.get("audit").is_some());
+        // Chain integrity should be ok on a fresh log
+        assert_eq!(json["audit"]["chain_integrity"]["status"], "ok");
     }
 
     #[tokio::test]
@@ -4011,6 +4159,8 @@ mod mock_backend_tests {
                 component_id: id.to_string(),
                 current_mode: "default".into(),
                 available_modes: vec!["default".into(), "extended".into()],
+                mode_descriptors: vec![],
+                active_since: None,
             })
         }
 
@@ -4065,7 +4215,13 @@ mod mock_backend_tests {
         fn get_group(&self, id: &str) -> Option<SovdGroup> {
             self.list_groups().into_iter().find(|g| g.id == id)
         }
+    }
 
+    #[async_trait]
+    impl native_interfaces::ExtendedDiagBackend for MockCdaBackend {
+        fn handles_component(&self, component_id: &str) -> bool {
+            ComponentBackend::handles_component(self, component_id)
+        }
         async fn io_control(
             &self,
             _cid: &str,
@@ -4114,10 +4270,13 @@ mod mock_backend_tests {
 
     fn mock_state() -> AppState {
         use crate::state::{DiagState, RuntimeState, SecurityState};
-        let backend: Arc<dyn ComponentBackend> = Arc::new(MockCdaBackend);
-        let router = Arc::new(ComponentRouter::new(vec![backend]));
+        let mock = Arc::new(MockCdaBackend);
+        let mock_ext: Arc<dyn native_interfaces::ExtendedDiagBackend> = mock.clone();
+        let mock_comp: Arc<dyn ComponentBackend> = mock;
+        let router = Arc::new(ComponentRouter::new(vec![mock_comp]).with_extended(vec![mock_ext]));
         AppState {
             backend: router.clone(),
+            extended_backend: router.clone(),
             entity_backend: router,
             diag: DiagState {
                 fault_manager: Arc::new(FaultManager::new()),
@@ -4127,6 +4286,7 @@ mod mock_backend_tests {
             security: SecurityState {
                 oem_profile: Arc::new(native_interfaces::DefaultProfile),
                 audit_log: Arc::new(native_core::AuditLog::new()),
+                rate_limiter: None,
             },
             runtime: RuntimeState {
                 health: Arc::new(HealthMonitor::new()),

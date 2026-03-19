@@ -29,6 +29,7 @@
 pub mod audit_log;
 pub mod diag_log;
 pub mod fault_bridge;
+pub mod fault_governor;
 pub mod fault_manager;
 pub mod http_backend;
 pub mod lock_manager;
@@ -38,6 +39,7 @@ pub mod router;
 pub use audit_log::{AuditLog, AuditLogConfig};
 pub use diag_log::DiagLog;
 pub use fault_bridge::{FaultBridge, FaultLifecycleStage, FaultRecord, FaultSeverity, FaultSink};
+pub use fault_governor::{FaultGovernor, FaultGovernorConfig};
 pub use fault_manager::FaultManager;
 pub use http_backend::{SovdHttpBackend, SovdHttpBackendConfig};
 pub use lock_manager::LockManager;

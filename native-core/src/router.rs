@@ -24,7 +24,7 @@ use native_interfaces::{
         SovdComponentConfig, SovdDataCatalogEntry, SovdFault, SovdGroup, SovdMode, SovdOperation,
         SovdSoftwarePackage,
     },
-    ComponentBackend, DiagServiceError, EntityBackend,
+    ComponentBackend, DiagServiceError, EntityBackend, ExtendedDiagBackend,
 };
 
 /// Gateway router that dispatches SOVD requests to the correct backend.
@@ -33,6 +33,7 @@ use native_interfaces::{
 /// `handles_component(id)` returns true for wins the dispatch.
 pub struct ComponentRouter {
     backends: Vec<Arc<dyn ComponentBackend>>,
+    extended_backends: Vec<Arc<dyn ExtendedDiagBackend>>,
 }
 
 impl ComponentRouter {
@@ -43,7 +44,20 @@ impl ComponentRouter {
             names = ?backends.iter().map(|b| b.name()).collect::<Vec<_>>(),
             "ComponentRouter initialized"
         );
-        Self { backends }
+        Self {
+            backends,
+            extended_backends: vec![],
+        }
+    }
+
+    /// Register extended-diagnostics backends (UDS vendor extensions).
+    ///
+    /// Call after `new()` to enable `/x-uds/…` dispatch for backends
+    /// that implement `ExtendedDiagBackend`.
+    #[must_use]
+    pub fn with_extended(mut self, extended: Vec<Arc<dyn ExtendedDiagBackend>>) -> Self {
+        self.extended_backends = extended;
+        self
     }
 
     /// Find the backend responsible for a component
@@ -58,6 +72,21 @@ impl ComponentRouter {
                 DiagServiceError::NotFound(Some(format!(
                     "No backend manages component '{component_id}'"
                 )))
+            })
+    }
+
+    /// Find the extended-diagnostics backend for a component
+    fn extended_backend_for(
+        &self,
+        component_id: &str,
+    ) -> Result<&Arc<dyn ExtendedDiagBackend>, DiagServiceError> {
+        self.extended_backends
+            .iter()
+            .find(|b| b.handles_component(component_id))
+            .ok_or_else(|| {
+                DiagServiceError::RequestNotSupported(format!(
+                    "No extended-diagnostics backend for component '{component_id}'"
+                ))
             })
     }
 
@@ -288,8 +317,17 @@ impl ComponentBackend for ComponentRouter {
         self.backend_for(component_id)?
             .get_software_package_status(component_id, package_id)
     }
+}
 
-    // ── Extended diagnostics — dispatch to owning backend ───────────────────
+// ── ExtendedDiagBackend — dispatch x-uds calls to extended backends ──────
+
+#[async_trait]
+impl ExtendedDiagBackend for ComponentRouter {
+    fn handles_component(&self, component_id: &str) -> bool {
+        self.extended_backends
+            .iter()
+            .any(|b| b.handles_component(component_id))
+    }
 
     async fn io_control(
         &self,
@@ -298,7 +336,7 @@ impl ComponentBackend for ComponentRouter {
         control: &str,
         value: Option<&[u8]>,
     ) -> Result<serde_json::Value, DiagServiceError> {
-        self.backend_for(component_id)?
+        self.extended_backend_for(component_id)?
             .io_control(component_id, data_id, control, value)
             .await
     }
@@ -309,13 +347,13 @@ impl ComponentBackend for ComponentRouter {
         control_type: &str,
         communication_type: u8,
     ) -> Result<(), DiagServiceError> {
-        self.backend_for(component_id)?
+        self.extended_backend_for(component_id)?
             .communication_control(component_id, control_type, communication_type)
             .await
     }
 
     async fn dtc_setting(&self, component_id: &str, setting: &str) -> Result<(), DiagServiceError> {
-        self.backend_for(component_id)?
+        self.extended_backend_for(component_id)?
             .dtc_setting(component_id, setting)
             .await
     }
@@ -326,7 +364,7 @@ impl ComponentBackend for ComponentRouter {
         address: u32,
         size: u32,
     ) -> Result<Vec<u8>, DiagServiceError> {
-        self.backend_for(component_id)?
+        self.extended_backend_for(component_id)?
             .read_memory(component_id, address, size)
             .await
     }
@@ -337,7 +375,7 @@ impl ComponentBackend for ComponentRouter {
         address: u32,
         data: &[u8],
     ) -> Result<(), DiagServiceError> {
-        self.backend_for(component_id)?
+        self.extended_backend_for(component_id)?
             .write_memory(component_id, address, data)
             .await
     }
@@ -348,15 +386,13 @@ impl ComponentBackend for ComponentRouter {
         firmware: &[u8],
         memory_address: u32,
     ) -> Result<serde_json::Value, DiagServiceError> {
-        self.backend_for(component_id)?
+        self.extended_backend_for(component_id)?
             .flash(component_id, firmware, memory_address)
             .await
     }
 
-    // ── Keepalive — aggregate from all backends ─────────────────────────────
-
     fn active_keepalives(&self) -> Vec<String> {
-        self.backends
+        self.extended_backends
             .iter()
             .flat_map(|b| b.active_keepalives())
             .collect()
@@ -455,6 +491,8 @@ mod tests {
                 component_id: id.to_string(),
                 current_mode: "default".into(),
                 available_modes: vec![],
+                mode_descriptors: vec![],
+                active_since: None,
             })
         }
         async fn set_mode(&self, _: &str, _: &str) -> Result<(), DiagServiceError> {
@@ -490,39 +528,13 @@ mod tests {
         fn get_group(&self, _: &str) -> Option<SovdGroup> {
             None
         }
-        async fn io_control(
-            &self,
-            _: &str,
-            _: &str,
-            _: &str,
-            _: Option<&[u8]>,
-        ) -> Result<serde_json::Value, DiagServiceError> {
-            Ok(serde_json::json!({}))
-        }
-        async fn communication_control(
-            &self,
-            _: &str,
-            _: &str,
-            _: u8,
-        ) -> Result<(), DiagServiceError> {
-            Ok(())
-        }
-        async fn dtc_setting(&self, _: &str, _: &str) -> Result<(), DiagServiceError> {
-            Ok(())
-        }
-        async fn read_memory(&self, _: &str, _: u32, _: u32) -> Result<Vec<u8>, DiagServiceError> {
-            Ok(vec![])
-        }
-        async fn write_memory(&self, _: &str, _: u32, _: &[u8]) -> Result<(), DiagServiceError> {
-            Ok(())
-        }
-        async fn flash(
-            &self,
-            _: &str,
-            _: &[u8],
-            _: u32,
-        ) -> Result<serde_json::Value, DiagServiceError> {
-            Ok(serde_json::json!({}))
+    }
+
+    // MockBackend uses all ExtendedDiagBackend defaults (returns "not supported")
+    #[async_trait]
+    impl ExtendedDiagBackend for MockBackend {
+        fn handles_component(&self, component_id: &str) -> bool {
+            ComponentBackend::handles_component(self, component_id)
         }
     }
 
@@ -542,9 +554,9 @@ mod tests {
         let b2: Arc<dyn ComponentBackend> = Arc::new(MockBackend::new(&["brake"]));
         let router = ComponentRouter::new(vec![b1, b2]);
 
-        assert!(router.handles_component("hpc"));
-        assert!(router.handles_component("brake"));
-        assert!(!router.handles_component("nonexistent"));
+        assert!(ComponentBackend::handles_component(&router, "hpc"));
+        assert!(ComponentBackend::handles_component(&router, "brake"));
+        assert!(!ComponentBackend::handles_component(&router, "nonexistent"));
     }
 
     #[test]

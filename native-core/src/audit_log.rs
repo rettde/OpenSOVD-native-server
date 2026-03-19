@@ -18,6 +18,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use native_interfaces::sovd::{SovdAuditAction, SovdAuditEntry};
+use sha2::{Digest, Sha256};
 use tracing::{debug, warn};
 
 const DEFAULT_MAX_ENTRIES: usize = 10_000;
@@ -27,6 +28,8 @@ pub struct AuditLog {
     entries: Mutex<VecDeque<SovdAuditEntry>>,
     max_entries: usize,
     seq_counter: AtomicU64,
+    /// SHA-256 hash of the most recent entry (for hash-chain linking)
+    prev_hash: Mutex<String>,
     /// Optional append-only JSONL file for tamper-resistant persistence
     file_sink: Option<Mutex<std::io::BufWriter<std::fs::File>>>,
     /// Whether the audit log is enabled
@@ -61,11 +64,15 @@ pub struct AuditFilter {
 
 impl AuditLog {
     /// Create a new audit log with default settings (enabled, 10k entries, no file).
+    /// Genesis hash — the `prev_hash` value for the very first entry.
+    const GENESIS: &'static str = "genesis";
+
     pub fn new() -> Self {
         Self {
             entries: Mutex::new(VecDeque::with_capacity(DEFAULT_MAX_ENTRIES)),
             max_entries: DEFAULT_MAX_ENTRIES,
             seq_counter: AtomicU64::new(1),
+            prev_hash: Mutex::new(Self::GENESIS.to_owned()),
             file_sink: None,
             enabled: true,
         }
@@ -109,6 +116,7 @@ impl AuditLog {
             entries: Mutex::new(VecDeque::with_capacity(max)),
             max_entries: max,
             seq_counter: AtomicU64::new(1),
+            prev_hash: Mutex::new(Self::GENESIS.to_owned()),
             file_sink,
             enabled: config.enabled,
         }
@@ -133,7 +141,8 @@ impl AuditLog {
             return;
         }
 
-        let entry = SovdAuditEntry {
+        // Build entry without hash fields first (used as hash input)
+        let mut entry = SovdAuditEntry {
             seq: self.seq_counter.fetch_add(1, Ordering::Relaxed),
             timestamp: chrono::Utc::now().to_rfc3339(),
             caller: caller.to_owned(),
@@ -144,7 +153,17 @@ impl AuditLog {
             outcome: outcome.to_owned(),
             detail: detail.map(ToOwned::to_owned),
             trace_id: trace_id.map(ToOwned::to_owned),
+            prev_hash: None,
+            hash: None,
         };
+
+        // Hash chaining: prev_hash ← previous entry's hash, hash ← SHA-256(prev_hash + entry)
+        let mut prev = self.prev_hash.lock().unwrap_or_else(|e| e.into_inner());
+        entry.prev_hash = Some(prev.clone());
+        let hash = Self::compute_hash(&prev, &entry);
+        entry.hash = Some(hash.clone());
+        *prev = hash;
+        drop(prev);
 
         // Write to file sink first (before memory, so file is always ahead)
         if let Some(ref sink) = self.file_sink {
@@ -230,6 +249,60 @@ impl AuditLog {
     /// Whether the audit log is enabled.
     pub fn is_enabled(&self) -> bool {
         self.enabled
+    }
+
+    /// Verify the hash chain integrity of all in-memory entries.
+    ///
+    /// Returns `Ok(count)` with the number of verified entries, or
+    /// `Err(msg)` describing the first broken link.
+    pub fn verify_chain(&self) -> Result<usize, String> {
+        let entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        let mut expected_prev = Self::GENESIS.to_owned();
+
+        for (i, entry) in entries.iter().enumerate() {
+            let prev = entry.prev_hash.as_deref().unwrap_or("<missing>");
+            if prev != expected_prev {
+                return Err(format!(
+                    "Chain broken at seq {}: expected prev_hash '{}', got '{}'",
+                    entry.seq, expected_prev, prev
+                ));
+            }
+            let computed = Self::compute_hash(&expected_prev, entry);
+            let stored = entry.hash.as_deref().unwrap_or("<missing>");
+            if computed != stored {
+                return Err(format!(
+                    "Hash mismatch at seq {}: computed '{}', stored '{}'",
+                    entry.seq, computed, stored
+                ));
+            }
+            expected_prev = computed;
+            let _ = i; // suppress unused warning in older compilers
+        }
+        Ok(entries.len())
+    }
+
+    /// Compute SHA-256 hash over `prev_hash` concatenated with entry's content fields.
+    fn compute_hash(prev_hash: &str, entry: &SovdAuditEntry) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(prev_hash.as_bytes());
+        hasher.update(entry.seq.to_le_bytes());
+        hasher.update(entry.timestamp.as_bytes());
+        hasher.update(entry.caller.as_bytes());
+        // Action as its JSON-serialized form for determinism
+        if let Ok(action_str) = serde_json::to_string(&entry.action) {
+            hasher.update(action_str.as_bytes());
+        }
+        hasher.update(entry.target.as_bytes());
+        hasher.update(entry.resource.as_bytes());
+        hasher.update(entry.method.as_bytes());
+        hasher.update(entry.outcome.as_bytes());
+        if let Some(ref d) = entry.detail {
+            hasher.update(d.as_bytes());
+        }
+        if let Some(ref t) = entry.trace_id {
+            hasher.update(t.as_bytes());
+        }
+        hex::encode(hasher.finalize())
     }
 
     /// Flush the file sink (if any). Called during graceful shutdown to ensure
@@ -494,8 +567,106 @@ mod tests {
         let lines: Vec<&str> = content.lines().collect();
         assert_eq!(lines.len(), 2);
 
-        // Each line should be valid JSON
+        // Each line should be valid JSON with hash fields
         let entry: SovdAuditEntry = serde_json::from_str(lines[0]).unwrap();
         assert_eq!(entry.caller, "u1");
+        assert!(entry.hash.is_some());
+        assert!(entry.prev_hash.is_some());
+    }
+
+    // ── Hash chaining tests (E1.1) ──────────────────────────────────────
+
+    #[test]
+    fn entries_have_hash_and_prev_hash() {
+        let log = make_log();
+        record_sample(&log, "u1", SovdAuditAction::ReadData, "c/hpc");
+        record_sample(&log, "u2", SovdAuditAction::WriteData, "c/hpc");
+
+        let all = log.query(&AuditFilter::default());
+        // First entry: prev_hash = "genesis"
+        assert_eq!(all[0].prev_hash.as_deref(), Some("genesis"));
+        assert!(all[0].hash.is_some());
+        // Second entry: prev_hash = first entry's hash
+        assert_eq!(all[1].prev_hash, all[0].hash);
+        assert!(all[1].hash.is_some());
+        // Hashes are different
+        assert_ne!(all[0].hash, all[1].hash);
+    }
+
+    #[test]
+    fn verify_chain_succeeds_on_valid_log() {
+        let log = make_log();
+        for i in 0..10 {
+            record_sample(&log, &format!("u{i}"), SovdAuditAction::ReadData, "c");
+        }
+        let result = log.verify_chain();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 10);
+    }
+
+    #[test]
+    fn verify_chain_detects_tampered_entry() {
+        let log = make_log();
+        record_sample(&log, "u1", SovdAuditAction::ReadData, "c/hpc");
+        record_sample(&log, "u2", SovdAuditAction::WriteData, "c/hpc");
+
+        // Tamper with an entry
+        {
+            let mut entries = log.entries.lock().unwrap();
+            entries[1].caller = "TAMPERED".to_owned();
+        }
+
+        let result = log.verify_chain();
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("Hash mismatch"), "Got: {msg}");
+    }
+
+    #[test]
+    fn verify_chain_detects_broken_prev_hash() {
+        let log = make_log();
+        record_sample(&log, "u1", SovdAuditAction::ReadData, "c/hpc");
+        record_sample(&log, "u2", SovdAuditAction::WriteData, "c/hpc");
+
+        // Break the chain link
+        {
+            let mut entries = log.entries.lock().unwrap();
+            entries[1].prev_hash = Some("bogus".to_owned());
+        }
+
+        let result = log.verify_chain();
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("Chain broken"), "Got: {msg}");
+    }
+
+    #[test]
+    fn verify_chain_empty_log_is_ok() {
+        let log = make_log();
+        assert_eq!(log.verify_chain().unwrap(), 0);
+    }
+
+    #[test]
+    fn hash_is_deterministic() {
+        // Same input → same hash
+        let entry = SovdAuditEntry {
+            seq: 1,
+            timestamp: "2026-01-01T00:00:00Z".to_owned(),
+            caller: "test".to_owned(),
+            action: SovdAuditAction::ReadData,
+            target: "c/hpc".to_owned(),
+            resource: "data".to_owned(),
+            method: "GET".to_owned(),
+            outcome: "success".to_owned(),
+            detail: None,
+            trace_id: None,
+            prev_hash: None,
+            hash: None,
+        };
+        let h1 = AuditLog::compute_hash("genesis", &entry);
+        let h2 = AuditLog::compute_hash("genesis", &entry);
+        assert_eq!(h1, h2);
+        // SHA-256 hex output is 64 chars
+        assert_eq!(h1.len(), 64);
     }
 }
