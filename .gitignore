@@ -32,16 +32,13 @@ Thumbs.db
 lcov.info
 tarpaulin-report.html
 
-# Proprietary OEM profiles and audits (not open-source)
-# The generic oem_sample.rs serves as a template for custom implementations.
-native-sovd/src/oem_mbds.rs
-MBDS_CONFORMANCE_AUDIT.md
-MBDS-README.md
-MBDS-proprietary.zip
-docs/adr/ADR-0001-mbds-specific-adaptations.md
+# Proprietary OEM profiles (oem_sample.rs is the open-source template)
+native-sovd/src/oem_*.rs
+!native-sovd/src/oem_sample.rs
 
-# External reference code (not part of this project)
-/CDA/
+# Vendor-specific files (not open-source)
+*_CONFORMANCE_AUDIT.md
+*-proprietary.zip
 
 # Node / npm (CDF validator tooling)
 node_modules/
