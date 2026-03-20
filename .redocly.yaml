@@ -1,0 +1,19 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Redocly configuration for SOVD CDF validation
+#
+# Uses the DSA GmbH SOVD CDF Validator plugin (MIT license):
+#   https://github.com/dsagmbh/sovd-cdf-validator
+#
+# Install:  npm install @redocly/cli github:dsagmbh/sovd-cdf-validator
+# Run:      npx @redocly/cli lint --config .redocly.yaml openapi-spec.json
+# ─────────────────────────────────────────────────────────────────────────────
+
+plugins:
+  - '@dsagmbh/sovd-redocly-rules/plugins/sovd-rules.js'
+
+extends:
+  - sovd-rules/recommended
+
+rules:
+  # Promote retention-timeout to error (recommended = warn)
+  sovd-rules/x-sovd-retention-timeout-defined: error

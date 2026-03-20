@@ -58,6 +58,31 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --workspace
 
+  sovd-cdf-validate:
+    name: SOVD CDF Validation (DSA)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Generate fresh CDF from Rust code ────────────────────────────
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Generate openapi-spec.json
+        run: cargo test -p native-sovd export_openapi_spec -- --ignored 2>/dev/null || cargo test -p native-sovd export_openapi_spec
+
+      # ── Install Redocly CLI + DSA SOVD rules (from GitHub, no fork) ─
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install DSA SOVD CDF Validator
+        run: |
+          npm install --no-save @redocly/cli@latest
+          npm install --no-save github:dsagmbh/sovd-cdf-validator
+
+      # ── Validate CDF against SOVD standard rules ────────────────────
+      - name: Redocly lint (SOVD CDF rules)
+        run: npx @redocly/cli lint --config .redocly.yaml openapi-spec.json
+
   docker:
     name: Docker build
     runs-on: ubuntu-latest
