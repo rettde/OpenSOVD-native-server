@@ -42,10 +42,13 @@ pub struct DataSemantics {
     pub sampling_hint: Option<f64>,
 
     /// Classification tags for ML feature engineering (e.g. "powertrain", "safety", "comfort")
-    #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "classificationTags")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        rename = "classificationTags"
+    )]
     pub classification_tags: Vec<String>,
 }
-
 
 /// Normal operating range for a data value.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -68,10 +71,7 @@ pub trait DataCatalogProvider: Send + Sync {
     /// Return semantic metadata for all known data items on a component.
     ///
     /// Default: returns an empty map. Override for bulk enrichment.
-    fn all_metadata(
-        &self,
-        _component_id: &str,
-    ) -> Vec<(String, DataSemantics)> {
+    fn all_metadata(&self, _component_id: &str) -> Vec<(String, DataSemantics)> {
         Vec::new()
     }
 
@@ -161,7 +161,10 @@ mod tests {
             "battery_voltage",
             DataSemantics {
                 unit: Some("V".into()),
-                normal_range: Some(NormalRange { min: 11.5, max: 14.5 }),
+                normal_range: Some(NormalRange {
+                    min: 11.5,
+                    max: 14.5,
+                }),
                 semantic_ref: Some("Vehicle.Powertrain.Battery.Voltage".into()),
                 data_type: Some("float".into()),
                 sampling_hint: Some(1.0),
@@ -207,7 +210,10 @@ mod tests {
     fn data_semantics_serde_roundtrip() {
         let semantics = DataSemantics {
             unit: Some("°C".into()),
-            normal_range: Some(NormalRange { min: -40.0, max: 120.0 }),
+            normal_range: Some(NormalRange {
+                min: -40.0,
+                max: 120.0,
+            }),
             semantic_ref: Some("Vehicle.Powertrain.CoolantTemperature".into()),
             data_type: Some("float".into()),
             sampling_hint: Some(5.0),

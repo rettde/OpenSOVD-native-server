@@ -365,9 +365,7 @@ pub async fn auth_middleware(
                         .extensions_mut()
                         .insert(AuthenticatedClient("api-key-client".to_owned()));
                     // Inject default tenant context for API key auth (Wave 3, A3.3)
-                    request
-                        .extensions_mut()
-                        .insert(TenantContext::default());
+                    request.extensions_mut().insert(TenantContext::default());
                     return Ok(next.run(request).await);
                 }
             }

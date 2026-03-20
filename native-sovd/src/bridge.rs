@@ -24,8 +24,8 @@ use axum::http::StatusCode;
 use axum::Json;
 use dashmap::DashMap;
 use native_interfaces::bridge::{
-    BridgeConfig, BridgeError, BridgeSession, BridgeTransport,
-    SovdBridgeRequest, SovdBridgeResponse,
+    BridgeConfig, BridgeError, BridgeSession, BridgeTransport, SovdBridgeRequest,
+    SovdBridgeResponse,
 };
 use native_interfaces::sovd::SovdErrorEnvelope;
 use serde::{Deserialize, Serialize};
@@ -125,9 +125,7 @@ pub struct BridgeState {
 
 /// List all active bridge sessions.
 /// GET /sovd/v1/x-bridge/sessions
-pub async fn list_sessions(
-    State(bridge): State<BridgeState>,
-) -> Json<serde_json::Value> {
+pub async fn list_sessions(State(bridge): State<BridgeState>) -> Json<serde_json::Value> {
     let sessions = bridge.transport.active_sessions();
     Json(serde_json::json!({
         "@odata.context": "$metadata#bridge-sessions",
@@ -289,9 +287,7 @@ pub struct BridgeStatus {
     pub mode: String,
 }
 
-pub async fn bridge_status(
-    State(bridge): State<BridgeState>,
-) -> Json<BridgeStatus> {
+pub async fn bridge_status(State(bridge): State<BridgeState>) -> Json<BridgeStatus> {
     let mode = if bridge.config.listen_addr.is_some() {
         "cloud-relay"
     } else if bridge.config.connect_url.is_some() {
@@ -316,18 +312,9 @@ pub fn build_bridge_router(state: BridgeState) -> axum::Router {
         .route("/status", get(bridge_status))
         .route("/sessions", get(list_sessions))
         .route("/sessions/{session_id}", get(get_session))
-        .route(
-            "/sessions/{session_id}/forward",
-            post(forward_to_vehicle),
-        )
-        .route(
-            "/sessions/{session_id}/heartbeat",
-            post(heartbeat_session),
-        )
-        .route(
-            "/sessions/{session_id}",
-            delete(disconnect_session),
-        )
+        .route("/sessions/{session_id}/forward", post(forward_to_vehicle))
+        .route("/sessions/{session_id}/heartbeat", post(heartbeat_session))
+        .route("/sessions/{session_id}", delete(disconnect_session))
         .with_state(state)
 }
 

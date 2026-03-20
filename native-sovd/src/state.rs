@@ -17,10 +17,10 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use native_core::{AuditLog, DiagLog, FaultManager, LockManager};
 use native_health::HealthMonitor;
+use native_interfaces::data_catalog::DataCatalogProvider;
 use native_interfaces::oem::OemProfile;
 use native_interfaces::sovd::SovdSoftwarePackage;
 use native_interfaces::sovd::{SovdOperationExecution, SovdProximityChallenge};
-use native_interfaces::data_catalog::DataCatalogProvider;
 use native_interfaces::{ComponentBackend, EntityBackend, ExtendedDiagBackend};
 
 // ── Sub-state: Diagnostics ──────────────────────────────────────────────────

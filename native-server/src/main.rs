@@ -25,12 +25,12 @@ use native_core::{
     SovdHttpBackendConfig,
 };
 use native_health::HealthMonitor;
-use native_interfaces::ComponentBackend;
 use native_interfaces::bridge::BridgeConfig;
 use native_interfaces::tenant::MultiTenantConfig;
+use native_interfaces::ComponentBackend;
 use native_sovd::{
-    build_router, AppState, AuthConfig, BridgeState, DltConfig, DltTextLayer, InMemoryBridgeTransport,
-    MdnsConfig, MdnsHandle,
+    build_router, AppState, AuthConfig, BridgeState, DltConfig, DltTextLayer,
+    InMemoryBridgeTransport, MdnsConfig, MdnsHandle,
 };
 
 use native_comm_someip::{SomeIpConfig, SomeIpRuntime};
@@ -410,8 +410,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         info!("Cloud bridge mode enabled");
         let bridge_router = native_sovd::bridge::build_bridge_router(bridge_state);
-        build_router(state, config.auth)
-            .nest("/sovd/v1/x-bridge", bridge_router)
+        build_router(state, config.auth).nest("/sovd/v1/x-bridge", bridge_router)
     } else {
         build_router(state, config.auth)
     };

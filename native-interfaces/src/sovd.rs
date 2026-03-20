@@ -52,7 +52,10 @@ pub struct SovdComponent {
     #[serde(skip_serializing_if = "Option::is_none", rename = "hardwareVariant")]
     pub hardware_variant: Option<String>,
     /// Installation variant (e.g. "base", "premium", "sport")
-    #[serde(skip_serializing_if = "Option::is_none", rename = "installationVariant")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "installationVariant"
+    )]
     pub installation_variant: Option<String>,
 }
 
@@ -87,10 +90,18 @@ pub struct SovdFault {
     #[serde(skip_serializing_if = "Option::is_none", rename = "affectedSubsystem")]
     pub affected_subsystem: Option<String>,
     /// VSS paths of signals correlated with this fault (Wave 4, W4.3)
-    #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "correlatedSignals")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        rename = "correlatedSignals"
+    )]
     pub correlated_signals: Vec<String>,
     /// ML classification tags for feature engineering (Wave 4, W4.3)
-    #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "classificationTags")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        rename = "classificationTags"
+    )]
     pub classification_tags: Vec<String>,
 }
 
@@ -411,7 +422,11 @@ pub struct SovdDataCatalogEntry {
     #[serde(skip_serializing_if = "Option::is_none", rename = "samplingHint")]
     pub sampling_hint: Option<f64>,
     /// ML classification tags (e.g. "powertrain", "safety") (Wave 4, W4.1)
-    #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "classificationTags")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        rename = "classificationTags"
+    )]
     pub classification_tags: Vec<String>,
 }
 
@@ -1268,7 +1283,10 @@ mod tests {
             data_type: SovdDataType::Float,
             unit: Some("V".into()),
             did: Some("0xF190".into()),
-            normal_range: Some(crate::data_catalog::NormalRange { min: 0.0, max: 16.0 }),
+            normal_range: Some(crate::data_catalog::NormalRange {
+                min: 0.0,
+                max: 16.0,
+            }),
             semantic_ref: Some("Vehicle.Powertrain.Battery.Voltage".into()),
             sampling_hint: Some(1.0),
             classification_tags: vec!["powertrain".into()],
@@ -1278,26 +1296,65 @@ mod tests {
         // Required fields — MUST always be present
         assert!(json.get("id").is_some(), "schema break: 'id' missing");
         assert!(json.get("name").is_some(), "schema break: 'name' missing");
-        assert!(json.get("access").is_some(), "schema break: 'access' missing");
-        assert!(json.get("dataType").is_some(), "schema break: 'dataType' missing");
+        assert!(
+            json.get("access").is_some(),
+            "schema break: 'access' missing"
+        );
+        assert!(
+            json.get("dataType").is_some(),
+            "schema break: 'dataType' missing"
+        );
 
         // Wave 4 semantic fields — MUST be present when populated
-        assert!(json.get("normalRange").is_some(), "schema break: 'normalRange' missing");
-        assert!(json.get("semanticRef").is_some(), "schema break: 'semanticRef' missing");
-        assert!(json.get("samplingHint").is_some(), "schema break: 'samplingHint' missing");
-        assert!(json.get("classificationTags").is_some(), "schema break: 'classificationTags' missing");
+        assert!(
+            json.get("normalRange").is_some(),
+            "schema break: 'normalRange' missing"
+        );
+        assert!(
+            json.get("semanticRef").is_some(),
+            "schema break: 'semanticRef' missing"
+        );
+        assert!(
+            json.get("samplingHint").is_some(),
+            "schema break: 'samplingHint' missing"
+        );
+        assert!(
+            json.get("classificationTags").is_some(),
+            "schema break: 'classificationTags' missing"
+        );
 
         // Verify normalRange shape
         let nr = json.get("normalRange").unwrap();
-        assert!(nr.get("min").is_some(), "schema break: normalRange.min missing");
-        assert!(nr.get("max").is_some(), "schema break: normalRange.max missing");
+        assert!(
+            nr.get("min").is_some(),
+            "schema break: normalRange.min missing"
+        );
+        assert!(
+            nr.get("max").is_some(),
+            "schema break: normalRange.max missing"
+        );
 
         // Verify camelCase naming (not snake_case)
-        assert!(json.get("data_type").is_none(), "schema break: 'data_type' should be 'dataType'");
-        assert!(json.get("normal_range").is_none(), "schema break: 'normal_range' should be 'normalRange'");
-        assert!(json.get("semantic_ref").is_none(), "schema break: 'semantic_ref' should be 'semanticRef'");
-        assert!(json.get("sampling_hint").is_none(), "schema break: 'sampling_hint' should be 'samplingHint'");
-        assert!(json.get("classification_tags").is_none(), "schema break: 'classification_tags' should be 'classificationTags'");
+        assert!(
+            json.get("data_type").is_none(),
+            "schema break: 'data_type' should be 'dataType'"
+        );
+        assert!(
+            json.get("normal_range").is_none(),
+            "schema break: 'normal_range' should be 'normalRange'"
+        );
+        assert!(
+            json.get("semantic_ref").is_none(),
+            "schema break: 'semantic_ref' should be 'semanticRef'"
+        );
+        assert!(
+            json.get("sampling_hint").is_none(),
+            "schema break: 'sampling_hint' should be 'samplingHint'"
+        );
+        assert!(
+            json.get("classification_tags").is_none(),
+            "schema break: 'classification_tags' should be 'classificationTags'"
+        );
     }
 
     #[test]
@@ -1318,13 +1375,34 @@ mod tests {
         let json = serde_json::to_value(&entry).unwrap();
 
         // Optional fields MUST be omitted when None/empty (skip_serializing_if)
-        assert!(json.get("description").is_none(), "schema break: empty description should be omitted");
-        assert!(json.get("unit").is_none(), "schema break: empty unit should be omitted");
-        assert!(json.get("x-uds-did").is_none(), "schema break: empty did should be omitted");
-        assert!(json.get("normalRange").is_none(), "schema break: empty normalRange should be omitted");
-        assert!(json.get("semanticRef").is_none(), "schema break: empty semanticRef should be omitted");
-        assert!(json.get("samplingHint").is_none(), "schema break: empty samplingHint should be omitted");
-        assert!(json.get("classificationTags").is_none(), "schema break: empty classificationTags should be omitted");
+        assert!(
+            json.get("description").is_none(),
+            "schema break: empty description should be omitted"
+        );
+        assert!(
+            json.get("unit").is_none(),
+            "schema break: empty unit should be omitted"
+        );
+        assert!(
+            json.get("x-uds-did").is_none(),
+            "schema break: empty did should be omitted"
+        );
+        assert!(
+            json.get("normalRange").is_none(),
+            "schema break: empty normalRange should be omitted"
+        );
+        assert!(
+            json.get("semanticRef").is_none(),
+            "schema break: empty semanticRef should be omitted"
+        );
+        assert!(
+            json.get("samplingHint").is_none(),
+            "schema break: empty samplingHint should be omitted"
+        );
+        assert!(
+            json.get("classificationTags").is_none(),
+            "schema break: empty classificationTags should be omitted"
+        );
     }
 
     #[test]
@@ -1347,23 +1425,56 @@ mod tests {
 
         // Required fields
         assert!(json.get("id").is_some(), "schema break: 'id' missing");
-        assert!(json.get("componentId").is_some(), "schema break: 'componentId' missing");
+        assert!(
+            json.get("componentId").is_some(),
+            "schema break: 'componentId' missing"
+        );
         assert!(json.get("code").is_some(), "schema break: 'code' missing");
-        assert!(json.get("severity").is_some(), "schema break: 'severity' missing");
-        assert!(json.get("status").is_some(), "schema break: 'status' missing");
+        assert!(
+            json.get("severity").is_some(),
+            "schema break: 'severity' missing"
+        );
+        assert!(
+            json.get("status").is_some(),
+            "schema break: 'status' missing"
+        );
         assert!(json.get("name").is_some(), "schema break: 'name' missing");
 
         // Wave 4 ontology enrichment fields
-        assert!(json.get("affectedSubsystem").is_some(), "schema break: 'affectedSubsystem' missing");
-        assert!(json.get("correlatedSignals").is_some(), "schema break: 'correlatedSignals' missing");
-        assert!(json.get("classificationTags").is_some(), "schema break: 'classificationTags' missing");
+        assert!(
+            json.get("affectedSubsystem").is_some(),
+            "schema break: 'affectedSubsystem' missing"
+        );
+        assert!(
+            json.get("correlatedSignals").is_some(),
+            "schema break: 'correlatedSignals' missing"
+        );
+        assert!(
+            json.get("classificationTags").is_some(),
+            "schema break: 'classificationTags' missing"
+        );
 
         // Verify camelCase
-        assert!(json.get("component_id").is_none(), "schema break: should be 'componentId'");
-        assert!(json.get("display_code").is_none(), "schema break: should be 'displayCode'");
-        assert!(json.get("affected_subsystem").is_none(), "schema break: should be 'affectedSubsystem'");
-        assert!(json.get("correlated_signals").is_none(), "schema break: should be 'correlatedSignals'");
-        assert!(json.get("classification_tags").is_none(), "schema break: should be 'classificationTags'");
+        assert!(
+            json.get("component_id").is_none(),
+            "schema break: should be 'componentId'"
+        );
+        assert!(
+            json.get("display_code").is_none(),
+            "schema break: should be 'displayCode'"
+        );
+        assert!(
+            json.get("affected_subsystem").is_none(),
+            "schema break: should be 'affectedSubsystem'"
+        );
+        assert!(
+            json.get("correlated_signals").is_none(),
+            "schema break: should be 'correlatedSignals'"
+        );
+        assert!(
+            json.get("classification_tags").is_none(),
+            "schema break: should be 'classificationTags'"
+        );
     }
 
     #[test]
@@ -1383,11 +1494,26 @@ mod tests {
             classification_tags: vec![],
         };
         let json = serde_json::to_value(&fault).unwrap();
-        assert!(json.get("displayCode").is_none(), "empty displayCode should be omitted");
-        assert!(json.get("description").is_none(), "empty description should be omitted");
+        assert!(
+            json.get("displayCode").is_none(),
+            "empty displayCode should be omitted"
+        );
+        assert!(
+            json.get("description").is_none(),
+            "empty description should be omitted"
+        );
         assert!(json.get("scope").is_none(), "empty scope should be omitted");
-        assert!(json.get("affectedSubsystem").is_none(), "empty affectedSubsystem should be omitted");
-        assert!(json.get("correlatedSignals").is_none(), "empty correlatedSignals should be omitted");
-        assert!(json.get("classificationTags").is_none(), "empty classificationTags should be omitted");
+        assert!(
+            json.get("affectedSubsystem").is_none(),
+            "empty affectedSubsystem should be omitted"
+        );
+        assert!(
+            json.get("correlatedSignals").is_none(),
+            "empty correlatedSignals should be omitted"
+        );
+        assert!(
+            json.get("classificationTags").is_none(),
+            "empty classificationTags should be omitted"
+        );
     }
 }

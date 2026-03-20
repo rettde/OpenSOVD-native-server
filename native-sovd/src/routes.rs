@@ -242,7 +242,10 @@ impl<S: Send + Sync> axum::extract::FromRequestParts<S> for TenantId {
         _state: &S,
     ) -> Result<Self, Self::Rejection> {
         // 1. Prefer tenant from auth middleware (JWT claim)
-        if let Some(ctx) = parts.extensions.get::<native_interfaces::tenant::TenantContext>() {
+        if let Some(ctx) = parts
+            .extensions
+            .get::<native_interfaces::tenant::TenantContext>()
+        {
             return Ok(Self(ctx.clone()));
         }
         // 2. Fall back to X-Tenant-ID header (dev / testing)
@@ -973,7 +976,11 @@ async fn connect_component(
         .connect(&component_id)
         .await
         .map_err(|ref e| diag_error(e))?;
-    let caller_label = if caller.is_empty() { "anonymous" } else { &caller };
+    let caller_label = if caller.is_empty() {
+        "anonymous"
+    } else {
+        &caller
+    };
     state.security.audit_log.record(
         caller_label,
         SovdAuditAction::Connect,
@@ -1650,16 +1657,17 @@ async fn list_audit_entries(
 /// This enables offline verification that the audit trail has not been tampered with.
 ///
 /// GET /sovd/v1/audit/export
-async fn export_signed_audit(
-    State(state): State<AppState>,
-) -> Json<serde_json::Value> {
-    let all_entries = state.security.audit_log.query(&native_core::audit_log::AuditFilter {
-        caller: None,
-        action: None,
-        target: None,
-        outcome: None,
-        limit: None,
-    });
+async fn export_signed_audit(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let all_entries = state
+        .security
+        .audit_log
+        .query(&native_core::audit_log::AuditFilter {
+            caller: None,
+            action: None,
+            target: None,
+            outcome: None,
+            limit: None,
+        });
     let chain_verification = state.security.audit_log.verify_chain().map_or_else(
         |e| serde_json::json!({"status": "broken", "error": e}),
         |n| serde_json::json!({"status": "ok", "verified_entries": n}),
@@ -1681,9 +1689,7 @@ async fn export_signed_audit(
 /// evidence for regulatory compliance (ISO 27001, UNECE R155, ISO 17978-3).
 ///
 /// GET /sovd/v1/compliance-evidence
-async fn compliance_evidence(
-    State(state): State<AppState>,
-) -> Json<serde_json::Value> {
+async fn compliance_evidence(State(state): State<AppState>) -> Json<serde_json::Value> {
     let audit_count = state.security.audit_log.len();
     let chain_verification = state.security.audit_log.verify_chain().map_or_else(
         |e| serde_json::json!({"status": "broken", "error": e}),
@@ -1734,7 +1740,11 @@ async fn component_snapshot(
     CallerIdentity(caller): CallerIdentity,
 ) -> Result<axum::response::Response, (StatusCode, Json<SovdErrorEnvelope>)> {
     // E4.2: Audit export access
-    let caller_label = if caller.is_empty() { "anonymous" } else { &caller };
+    let caller_label = if caller.is_empty() {
+        "anonymous"
+    } else {
+        &caller
+    };
     state.security.audit_log.record(
         caller_label,
         native_interfaces::sovd::SovdAuditAction::ReadData,
@@ -1769,11 +1779,7 @@ async fn component_snapshot(
 
     // Read each data item's current value and enrich with semantic metadata
     for entry in &catalog {
-        let value = state
-            .backend
-            .read_data(&component_id, &entry.id)
-            .await
-            .ok();
+        let value = state.backend.read_data(&component_id, &entry.id).await.ok();
 
         let semantics = state.data_catalog.metadata(&component_id, &entry.id);
 
@@ -1846,7 +1852,11 @@ async fn export_faults(
     CallerIdentity(caller): CallerIdentity,
 ) -> Result<axum::response::Response, (StatusCode, Json<SovdErrorEnvelope>)> {
     // E4.2: Audit export access
-    let caller_label = if caller.is_empty() { "anonymous" } else { &caller };
+    let caller_label = if caller.is_empty() {
+        "anonymous"
+    } else {
+        &caller
+    };
     state.security.audit_log.record(
         caller_label,
         native_interfaces::sovd::SovdAuditAction::ReadData,
@@ -1896,13 +1906,19 @@ async fn export_faults(
                 // Apply severity filter
                 if let Some(ref min_sev) = params.severity {
                     let passes = match min_sev.as_str() {
-                        "critical" => matches!(fault.severity, native_interfaces::sovd::SovdFaultSeverity::Critical),
+                        "critical" => matches!(
+                            fault.severity,
+                            native_interfaces::sovd::SovdFaultSeverity::Critical
+                        ),
                         "high" => matches!(
                             fault.severity,
                             native_interfaces::sovd::SovdFaultSeverity::Critical
                                 | native_interfaces::sovd::SovdFaultSeverity::High
                         ),
-                        "medium" => !matches!(fault.severity, native_interfaces::sovd::SovdFaultSeverity::Low),
+                        "medium" => !matches!(
+                            fault.severity,
+                            native_interfaces::sovd::SovdFaultSeverity::Low
+                        ),
                         _ => true,
                     };
                     if !passes {
@@ -1929,9 +1945,7 @@ async fn export_faults(
 // GET /schema/data-catalog — returns the full semantic schema across all
 // components for ML pipeline bootstrapping.
 
-async fn schema_data_catalog(
-    State(state): State<AppState>,
-) -> Json<serde_json::Value> {
+async fn schema_data_catalog(State(state): State<AppState>) -> Json<serde_json::Value> {
     let schema_version = state.data_catalog.schema_version();
     let components = state.backend.list_components();
 
@@ -2011,7 +2025,12 @@ async fn schema_data_catalog(
 async fn subscribe_data_changes(
     State(state): State<AppState>,
     Path(component_id): Path<String>,
-) -> Result<axum::response::sse::Sse<impl futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>>, (StatusCode, Json<SovdErrorEnvelope>)> {
+) -> Result<
+    axum::response::sse::Sse<
+        impl futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>,
+    >,
+    (StatusCode, Json<SovdErrorEnvelope>),
+> {
     // Verify component exists
     state
         .backend
@@ -2072,8 +2091,7 @@ async fn subscribe_data_changes(
         }
     };
 
-    Ok(axum::response::sse::Sse::new(stream)
-        .keep_alive(axum::response::sse::KeepAlive::default()))
+    Ok(axum::response::sse::Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default()))
 }
 
 // ── Data Listing (SOVD §7.5) ─────────────────────────────────────────────
@@ -4664,7 +4682,10 @@ mod mock_backend_tests {
                 data_type: SovdDataType::Integer,
                 unit: Some("km/h".into()),
                 did: Some("2000".into()),
-                normal_range: Some(native_interfaces::data_catalog::NormalRange { min: 0.0, max: 250.0 }),
+                normal_range: Some(native_interfaces::data_catalog::NormalRange {
+                    min: 0.0,
+                    max: 250.0,
+                }),
                 semantic_ref: Some("Vehicle.Speed".into()),
                 sampling_hint: Some(0.1),
                 classification_tags: vec!["powertrain".into()],
@@ -5798,7 +5819,12 @@ mod mock_backend_tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let ct = resp.headers().get("content-type").unwrap().to_str().unwrap();
+        let ct = resp
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
         assert_eq!(ct, "application/x-ndjson");
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await
@@ -5831,7 +5857,12 @@ mod mock_backend_tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let ct = resp.headers().get("content-type").unwrap().to_str().unwrap();
+        let ct = resp
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
         assert_eq!(ct, "application/x-ndjson");
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await
@@ -5873,7 +5904,11 @@ mod mock_backend_tests {
         let text = String::from_utf8(body.to_vec()).unwrap();
         let lines: Vec<&str> = text.trim().lines().collect();
         // Only the meta line, no faults
-        assert_eq!(lines.len(), 1, "critical filter should exclude 'high' severity faults");
+        assert_eq!(
+            lines.len(),
+            1,
+            "critical filter should exclude 'high' severity faults"
+        );
     }
 
     #[tokio::test]
@@ -5922,8 +5957,16 @@ mod mock_backend_tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let ct = resp.headers().get("content-type").unwrap().to_str().unwrap();
-        assert!(ct.contains("text/event-stream"), "expected SSE content type");
+        let ct = resp
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(
+            ct.contains("text/event-stream"),
+            "expected SSE content type"
+        );
     }
 
     #[tokio::test]

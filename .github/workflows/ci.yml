@@ -42,6 +42,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+      # oem_mbds.rs is .gitignored (proprietary OEM profile). Create an empty
+      # stub so rustfmt can resolve the #[cfg(has_oem_mbds)] mod declaration.
+      - run: touch native-sovd/src/oem_mbds.rs
       - run: cargo fmt --all -- --check
 
   build:
