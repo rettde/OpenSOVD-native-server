@@ -300,4 +300,7 @@ All Waves 1–4 are fully implemented. The items below are **enhancement opportu
 | F7 | **Prometheus scrape target** | Expose `/metrics` for Prometheus pull-based monitoring. RED metrics are already recorded; a scrape endpoint would make them accessible without push. | Low |
 | F8 | **SOME/IP real transport** | Test and validate `native-comm-someip` FFI bindings against a real COVESA/vsomeip setup. Currently stub-mode in CI (no `libvsomeip3`). | Low |
 
+> Detailed implementation plan with phases, dependencies, code snippets, and acceptance criteria:
+> [future-work-implementation-plan.md](future-work-implementation-plan.md)
+
 **Current state: 398 tests, clippy clean, ISO 17978-3 conformant (51/51 mandatory requirements), all 4 waves complete.**

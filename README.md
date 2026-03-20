@@ -278,7 +278,8 @@ All waves are complete. These are **optional enhancements** for production deplo
 - **F7 — Prometheus scrape** — `/metrics` endpoint (RED metrics already recorded internally)
 - **F8 — SOME/IP real transport** — Validate `native-comm-someip` FFI against real COVESA/vsomeip
 
-> Details: [docs/integrated-roadmap.md § Future Work](docs/integrated-roadmap.md)
+> Implementation plan with phases, code snippets, and acceptance criteria:
+> [docs/future-work-implementation-plan.md](docs/future-work-implementation-plan.md)
 
 ## License
 
