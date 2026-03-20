@@ -84,10 +84,29 @@
 
 ## Planned (not yet implemented)
 
-| ID | Area | Description | Priority |
-|----|------|-------------|----------|
-| F5 | **E2E test suite** | Testcontainers with CDA + demo-ecu for full gateway round-trip | Medium |
-| F8 | **SOME/IP real transport** | Validate `native-comm-someip` FFI against real COVESA/vsomeip | Low |
+### ISO 17978-3 Compliance Gaps
+
+| ID | Area | Description | Ref | Effort |
+|----|------|-------------|-----|--------|
+| C1 | **`/areas` entity type** | E/E architecture zones as first-class entities | §4.2.3 | S |
+| C2 | **Mode collection semantics** | `GET /modes` + `PUT /modes/{modeId}` (individual mode resources) | §5.5.4 | S |
+| C3 | **DTC setting → modes** | Map `x-uds/dtc-setting` to standard `/modes` resource | §7.3.5 | S |
+
+### Enterprise / Fleet Readiness
+
+| ID | Area | Description | Priority | Effort |
+|----|------|-------------|----------|--------|
+| F5 | **E2E test suite** | Testcontainers with CDA + demo-ecu for full gateway round-trip | Medium | L |
+| F8 | **SOME/IP real transport** | Validate `native-comm-someip` FFI against real COVESA/vsomeip | Low | L |
+| F9 | **SQL storage backend** | PostgreSQL / SQLite for fleet-scale persistence (replace sled) | High | M |
+| F10 | **RBAC** | Role-based access control (OEM, workshop, supplier) | High | M |
+| F11 | **Audit forwarding** | SIEM export via syslog or Kafka (Splunk, ELK) | Medium | S |
+| F12 | **SW package signature verification** | Firmware integrity check before activation (ISO 24089) | High | M |
+| F13 | **Horizontal scaling** | Stateless mode with external state store (Redis / PostgreSQL) | Medium | L |
+| F14 | **mTLS backend connections** | TLS for Gateway → CDA / backend links | Medium | S |
+| F15 | **OIDC E2E validation** | Full auth flow tested against real IdP (Keycloak) | Medium | S |
+
+**Effort key:** S = 1–2 days · M = 3–5 days · L = 1–2 weeks
 
 ---
 
