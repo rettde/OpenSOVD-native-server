@@ -36,6 +36,7 @@ pub mod history;
 pub mod http_backend;
 pub mod lock_manager;
 pub mod router;
+pub mod syslog_sink;
 #[cfg(feature = "persist")]
 pub mod sled_storage;
 #[cfg(feature = "vault")]
@@ -56,6 +57,7 @@ pub use history::{HistoryConfig, HistoryService};
 pub use http_backend::{SovdHttpBackend, SovdHttpBackendConfig};
 pub use lock_manager::LockManager;
 pub use router::ComponentRouter;
+pub use syslog_sink::SyslogAuditSink;
 #[cfg(feature = "persist")]
 pub use sled_storage::SledStorage;
 #[cfg(feature = "vault")]

@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 #![deny(warnings)]
 
+pub mod audit_sink;
 pub mod backend;
 pub mod bridge;
 pub mod data_catalog;
@@ -14,6 +15,7 @@ pub mod diag;
 pub mod error;
 pub mod feature_flags;
 pub mod oem;
+pub mod rbac;
 pub mod secrets;
 pub mod sovd;
 pub mod storage;
@@ -31,7 +33,9 @@ pub use diag::{
 };
 pub use error::{ConnectionError, DiagServiceError, DoipGatewaySetupError, SomeIpError};
 pub use feature_flags::{FeatureFlagConfig, FeatureFlags, SharedFeatureFlags};
+pub use audit_sink::{AuditForwardingConfig, AuditSink, CallbackAuditSink};
 pub use oem::{DefaultProfile, OemProfile};
+pub use rbac::{RbacConfig, RbacPolicy, RbacRole};
 pub use secrets::{EnvSecretProvider, SecretProvider, StaticSecretProvider};
 pub use storage::{InMemoryStorage, StorageBackend};
 pub use tenant::{MultiTenantConfig, TenantContext, TenantIsolation};

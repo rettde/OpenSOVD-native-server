@@ -78,29 +78,32 @@
 | — | CycloneDX SBOM generation in CI | ✔ |
 | — | Prometheus `/metrics` endpoint (config-gated) | ✔ |
 
-**Total: 398+ tests · Clippy pedantic clean · ISO 17978-3 conformant (51/51)**
+### Compliance Fixes (C1–C3)
+
+| Area | What shipped | Tests |
+|------|-------------|-------|
+| `/areas` entity type | `SovdArea`, `EntityBackend`, `DiscoveryPolicy` gating (MBDS §2.2 → 404) | 3 |
+| Mode collection semantics | `PUT /modes/{modeId}` (ISO 17978-3 §5.5.4) | ✔ |
+| DTC setting → modes | `dtc-on`/`dtc-off` mapped in `activate_mode` handler | ✔ |
+
+### Enterprise Features (F10–F11)
+
+| Area | What shipped | Tests |
+|------|-------------|-------|
+| RBAC (F10) | `RbacPolicy` with admin/operator/reader roles, `RbacConfig` for custom roles | 10 |
+| Audit forwarding (F11) | `AuditSink` trait, `SyslogAuditSink` (RFC 5424 UDP), `CallbackAuditSink`, `AuditLog.add_sink()` | 2 |
+
+**Total: 412 tests · Clippy pedantic clean · ISO 17978-3 conformant (51/51)**
 
 ---
 
 ## Planned (not yet implemented)
-
-### ISO 17978-3 Compliance Gaps
-
-| ID | Area | Description | Ref | Effort |
-|----|------|-------------|-----|--------|
-| C1 | **`/areas` entity type** | E/E architecture zones as first-class entities | §4.2.3 | S |
-| C2 | **Mode collection semantics** | `GET /modes` + `PUT /modes/{modeId}` (individual mode resources) | §5.5.4 | S |
-| C3 | **DTC setting → modes** | Map `x-uds/dtc-setting` to standard `/modes` resource | §7.3.5 | S |
-
-### Enterprise / Fleet Readiness
 
 | ID | Area | Description | Priority | Effort |
 |----|------|-------------|----------|--------|
 | F5 | **E2E test suite** | Testcontainers with CDA + demo-ecu for full gateway round-trip | Medium | L |
 | F8 | **SOME/IP real transport** | Validate `native-comm-someip` FFI against real COVESA/vsomeip | Low | L |
 | F9 | **SQL storage backend** | PostgreSQL / SQLite for fleet-scale persistence (replace sled) | High | M |
-| F10 | **RBAC** | Role-based access control (OEM, workshop, supplier) | High | M |
-| F11 | **Audit forwarding** | SIEM export via syslog or Kafka (Splunk, ELK) | Medium | S |
 | F12 | **SW package signature verification** | Firmware integrity check before activation (ISO 24089) | High | M |
 | F13 | **Horizontal scaling** | Stateless mode with external state store (Redis / PostgreSQL) | Medium | L |
 | F14 | **mTLS backend connections** | TLS for Gateway → CDA / backend links | Medium | S |

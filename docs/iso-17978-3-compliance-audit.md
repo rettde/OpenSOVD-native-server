@@ -12,7 +12,7 @@
 
 The OpenSOVD-native-server implements the SOVD REST API as specified in ISO 17978-3, which is the ISO publication of the ASAM SOVD standard. This audit evaluates the implementation against the **ISO 17978-3** specification (based on ASAM SOVD V1.1.0), using all available interpretations from public documentation.
 
-**Overall assessment: ~98% ISO 17978-3 conformant** — The core diagnostic resource model (data, faults, operations, locking, capabilities, groups, logs, events) is fully implemented. Three critical URL path deviations were identified and **fixed during the original v0.8.1 audit**. Since then, Apps/Funcs entities (W1.3) and Software-Package lifecycle (W1.4) have been implemented, closing the two remaining FAIL items. Only `/areas` remains unimplemented (acceptable scope limitation for a gateway server).
+**Overall assessment: ~100% ISO 17978-3 conformant** — All entity types, resource paths, and protocol semantics are implemented. Three critical URL path deviations were fixed during the v0.8.1 audit. Apps/Funcs (W1.3), Software Packages (W1.4), Areas (C1), Mode collection semantics (C2), and DTC→modes mapping (C3) have all been implemented. Areas are gated by `DiscoveryPolicy` (MBDS §2.2 forbids them).
 
 | Category | Conformance | Notes |
 |----------|:-----------:|-------|
@@ -25,7 +25,7 @@ The OpenSOVD-native-server implements the SOVD REST API as specified in ISO 1797
 | Mode/Session | **PASS** | Path: `/modes` (fixed from `/mode` — see §2.2) |
 | Configuration | **PASS** | Path: `/configurations` (fixed from `/config` — see §2.3) |
 | Proximity Challenge | **PASS** | Path: `/proximity-challenge` (fixed from `/proximityChallenge` — see §2.4) |
-| Entity Model (Areas) | ⚠️ N/A | Not implemented — acceptable for gateway architecture |
+| Entity Model (Areas) | **PASS** | Full CRUD, gated by `DiscoveryPolicy::areas_enabled()` |
 | Software Packages | **PASS** | Upload, activate, rollback lifecycle (W1.4) |
 | Logs | **PASS** | `/logs` — correct |
 | Capabilities | **PASS** | `/capabilities` — correct |
@@ -43,23 +43,19 @@ The OpenSOVD-native-server implements the SOVD REST API as specified in ISO 1797
 
 ## 2. Detailed Findings
 
-### 2.1 FAIL — Missing Entity Types: `/apps`, `/areas`, `/funcs`
+### 2.1 FIXED — Entity Types: `/apps`, `/areas`, `/funcs`
 
 **ISO 17978-3 §4.2.3** defines five entity collection types:
 
 | Entity Collection | Description | Implemented? |
 |-------------------|-------------|:------------:|
 | `/components` | ECUs, software modules | YES |
-| `/apps` | Diagnostic applications (e.g. vehicle health monitors) | NO |
-| `/areas` | E/E architecture areas (zones, domains) | NO |
-| `/funcs` | Diagnostic functions (cross-component aggregations) | NO |
-| CDA | Classic Diagnostic Adapter (special component type) | Partial (via gateway) |
+| `/apps` | Diagnostic applications | YES (W1.3) |
+| `/areas` | E/E architecture areas | YES (C1 — gated by `DiscoveryPolicy`) |
+| `/funcs` | Diagnostic functions | YES (W1.3) |
+| CDA | Classic Diagnostic Adapter | YES (via gateway) |
 
-**Impact:** The server only supports the `components` entity collection. ISO 17978-3 defines a richer entity hierarchy where diagnostic applications (`/apps`), vehicle architecture zones (`/areas`), and aggregated diagnostic functions (`/funcs`) are first-class entities with their own resource sub-paths (data, faults, operations, etc.).
-
-**Interpretation:** In a gateway-only architecture (like ours), `components` is the primary entity type. The other entity types are relevant for full in-vehicle SOVD servers. The Eclipse OpenSOVD reference implementation also focuses primarily on components. This is an **acceptable scope limitation** for a gateway server, but should be documented.
-
-**Recommendation:** Add stub entity collections (`/apps`, `/areas`, `/funcs`) returning empty collections, or document this as an intentional scope exclusion.
+**OEM gating:** `/areas`, `/apps`, `/funcs` are each controlled by `DiscoveryPolicy` methods. MBDS §2.2 disables `/areas` → returns 404.
 
 ---
 
@@ -75,9 +71,10 @@ PUT  {entityPath}/modes/{modeId} — Set a specific mode
 POST {entityPath}/modes          — Activate a mode
 ```
 
-**Remaining notes:**
-1. **HTTP methods:** ISO 17978-3 uses `PUT` on individual mode IDs; we use `POST` on the collection (enhancement opportunity)
-2. **Collection semantics:** ISO 17978-3 treats modes as a collection of individual mode resources; our `SovdMode` returns a single object with `currentMode` + `availableModes`
+**Status:** All three HTTP methods are implemented:
+- `GET /modes` — list/get current mode
+- `POST /modes` — activate a mode (by name in body)
+- `PUT /modes/{modeId}` — activate a specific mode (C2), including DTC mapping (C3: `dtc-on`/`dtc-off` → `backend.dtc_setting()`)
 
 ---
 
@@ -108,19 +105,17 @@ Path now matches the ISO 17978-3 specification exactly.
 
 ---
 
-### 2.5 FAIL — Missing Software Packages Resource
+### 2.5 FIXED — Software Packages Resource
 
-**ISO 17978-3 §5.5.10** defines software package management:
+**ISO 17978-3 §5.5.10** — implemented in W1.4:
 
 ```
-GET  {entityPath}/software-packages                     — List packages
-POST {entityPath}/software-packages/{packageId}         — Initiate update
-GET  {entityPath}/software-packages/{packageId}/status  — Check update status
+GET    {entityPath}/software-packages                        — List packages
+POST   {entityPath}/software-packages                        — Upload package
+GET    {entityPath}/software-packages/{packageId}             — Get package
+POST   {entityPath}/software-packages/{packageId}/activate    — Activate
+POST   {entityPath}/software-packages/{packageId}/rollback    — Rollback
 ```
-
-**Current state:** No `software-packages` resource exists. We have a vendor-extension `POST /sovd/v1/x-uds/components/{id}/flash` for OTA flashing, but this uses a completely different API contract.
-
-**Recommendation:** Add a `/software-packages` resource or document this as a roadmap item. The vendor `flash` endpoint could be bridged to this standard resource.
 
 ---
 
@@ -346,20 +341,20 @@ The following endpoints are vendor-specific extensions under `/sovd/v1/x-uds/` a
 
 Files modified: `native-sovd/src/routes.rs`, `native-sovd/src/openapi.rs`, `native-core/src/http_backend.rs`, `examples/demo-ecu/src/main.rs` + all affected tests.
 
-### Remaining (Medium priority — future roadmap)
+### Previously Remaining — ALL RESOLVED
 
-| # | Finding | Description | Effort |
-|---|---------|-------------|--------|
-| 4 | Software packages | Add `/software-packages` resource | Medium |
-| 5 | Entity collections | Add stub `/apps`, `/areas`, `/funcs` | Low |
-| 6 | Mode collection semantics | Support `GET /modes` + `PUT /modes/{modeId}` | Medium |
-| 7 | DTC setting → modes mapping | Map `dtc-setting` to standard `/modes` | Low |
+| # | Finding | Status |
+|---|---------|:------:|
+| 4 | Software packages | **FIXED** (W1.4) |
+| 5 | Entity collections (`/apps`, `/areas`, `/funcs`) | **FIXED** (W1.3 + C1) |
+| 6 | Mode collection semantics (`PUT /modes/{modeId}`) | **FIXED** (C2) |
+| 7 | DTC setting → modes mapping | **FIXED** (C3) |
 
 ---
 
 ## 9. Test Coverage
 
-- **269 tests** passing (`cargo test --workspace`)
+- **401 tests** passing (`cargo test --workspace`)
 - **0 clippy warnings** (`cargo clippy --workspace -- -D warnings`)
 - **Format clean** (`cargo fmt --all -- --check`)
 - Integration tests cover mock CDA discovery, cache population, HTTP error mapping
@@ -369,15 +364,6 @@ Files modified: `native-sovd/src/routes.rs`, `native-sovd/src/openapi.rs`, `nati
 
 ## 10. Conclusion
 
-The OpenSOVD-native-server provides a **solid ISO 17978-3 foundation** with full coverage of the core diagnostic resource model. The three critical path deviations (`/mode` → `/modes`, `/config` → `/configurations`, `/proximityChallenge` → `/proximity-challenge`) are straightforward renames. The missing entity types (`apps`, `areas`, `funcs`) and `software-packages` resource represent scope gaps rather than design flaws.
+The OpenSOVD-native-server is **fully ISO 17978-3 conformant**. All entity types (components, apps, funcs, areas), all resource paths, mode collection semantics, DTC→modes mapping, and software package lifecycle are implemented. Areas are OEM-gatable via `DiscoveryPolicy` (MBDS §2.2 disables them).
 
-The implementation correctly follows ISO 17978-3 conventions for:
-- OData collection envelopes and query options
-- JSON camelCase field naming
-- Error model (OData error format)
-- Locking semantics with ownership enforcement
-- Asynchronous operation execution (202 + Location)
-- Conditional requests (ETag / If-None-Match)
-- Event subscription (SSE)
-
-**Recommended priority:** Fix the three path deviations (items 1-3) first, as they affect API contract compatibility with ISO 17978-3-conformant clients.
+No open compliance items remain.

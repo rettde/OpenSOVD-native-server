@@ -17,6 +17,7 @@ use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
+use native_interfaces::audit_sink::AuditSink;
 use native_interfaces::sovd::{SovdAuditAction, SovdAuditEntry};
 use sha2::{Digest, Sha256};
 use tracing::{debug, warn};
@@ -34,6 +35,8 @@ pub struct AuditLog {
     file_sink: Option<Mutex<std::io::BufWriter<std::fs::File>>>,
     /// Whether the audit log is enabled
     enabled: bool,
+    /// External audit sinks for SIEM forwarding (F11)
+    external_sinks: Mutex<Vec<Box<dyn AuditSink>>>,
 }
 
 /// Configuration for the audit log.
@@ -75,6 +78,7 @@ impl AuditLog {
             prev_hash: Mutex::new(Self::GENESIS.to_owned()),
             file_sink: None,
             enabled: true,
+            external_sinks: Mutex::new(Vec::new()),
         }
     }
 
@@ -119,7 +123,20 @@ impl AuditLog {
             prev_hash: Mutex::new(Self::GENESIS.to_owned()),
             file_sink,
             enabled: config.enabled,
+            external_sinks: Mutex::new(Vec::new()),
         }
+    }
+
+    /// Register an external audit sink for SIEM forwarding (F11).
+    ///
+    /// Sinks are called synchronously for every new audit entry after it
+    /// is written to the in-memory buffer and optional file sink.
+    pub fn add_sink(&self, sink: Box<dyn AuditSink>) {
+        debug!(sink_name = %sink.name(), "Registered external audit sink");
+        self.external_sinks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(sink);
     }
 
     /// Record an audit event. This is the primary entry point.
@@ -180,7 +197,15 @@ impl AuditLog {
         if entries.len() >= self.max_entries {
             entries.pop_front();
         }
-        entries.push_back(entry);
+        entries.push_back(entry.clone());
+        drop(entries);
+
+        // Forward to external sinks (F11)
+        if let Ok(sinks) = self.external_sinks.lock() {
+            for sink in sinks.iter() {
+                sink.forward(&entry);
+            }
+        }
     }
 
     /// Query audit entries with optional filters.
