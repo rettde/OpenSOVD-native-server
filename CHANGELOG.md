@@ -7,9 +7,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [0.12.0] — 2026-03-20
+## [0.13.0-beta] — 2026-03-20
 
-### Phase 2 Future Work — Prometheus Config, Vault Secrets, WebSocket Bridge
+### Phase 2 Future Work — Prometheus Config, Vault Secrets, WebSocket Bridge, Firmware Signing, mTLS
 
 #### F7: Prometheus Scrape Endpoint (config-gated)
 - `MetricsConfig` struct (`enabled`, `path`) in `AppConfig` — gates `/metrics` endpoint via config
