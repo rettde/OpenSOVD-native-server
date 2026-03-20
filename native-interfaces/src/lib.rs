@@ -37,5 +37,5 @@ pub use audit_sink::{AuditForwardingConfig, AuditSink, CallbackAuditSink};
 pub use oem::{DefaultProfile, OemProfile};
 pub use rbac::{RbacConfig, RbacPolicy, RbacRole};
 pub use secrets::{EnvSecretProvider, SecretProvider, StaticSecretProvider};
-pub use storage::{InMemoryStorage, StorageBackend};
+pub use storage::{InMemoryStorage, SnapshotId, SnapshotInfo, StorageBackend};
 pub use tenant::{MultiTenantConfig, TenantContext, TenantIsolation};

@@ -93,7 +93,15 @@
 | RBAC (F10) | `RbacPolicy` with admin/operator/reader roles, `RbacConfig` for custom roles | 10 |
 | Audit forwarding (F11) | `AuditSink` trait, `SyslogAuditSink` (RFC 5424 UDP), `CallbackAuditSink`, `AuditLog.add_sink()` | 2 |
 
-**Total: 412 tests · Clippy pedantic clean · ISO 17978-3 conformant (51/51)**
+### Persistent Storage (F9)
+
+| Area | What shipped | Tests |
+|------|-------------|-------|
+| Snapshot/Rollback trait (F9) | `create_snapshot`, `list_snapshots`, `restore_snapshot`, `delete_snapshot` on `StorageBackend` — follows AUTOSAR `ara::per` / Eclipse S-CORE `KvsBackend` pattern | 13 |
+| InMemoryStorage snapshots | Up to 16 in-memory snapshots with automatic eviction, `SnapshotInfo` metadata | 7 |
+| SledStorage snapshots | Persistent snapshots via sled trees (`snap:<id>`), survives restart, up to 32 on disk | 6 |
+
+**Total: 419 tests · Clippy pedantic clean · ISO 17978-3 conformant (51/51)**
 
 ---
 
@@ -103,7 +111,7 @@
 |----|------|-------------|----------|--------|
 | F5 | **E2E test suite** | Testcontainers with CDA + demo-ecu for full gateway round-trip | Medium | L |
 | F8 | **SOME/IP real transport** | Validate `native-comm-someip` FFI against real COVESA/vsomeip | Low | L |
-| F9 | **SQL storage backend** | PostgreSQL / SQLite for fleet-scale persistence (replace sled) | High | M |
+| F9 | ~~SQL storage backend~~ | **Implemented** as Snapshot/Rollback (AUTOSAR/S-CORE pattern) — see above | ✅ | — |
 | F12 | **SW package signature verification** | Firmware integrity check before activation (ISO 24089) | High | M |
 | F13 | **Horizontal scaling** | Stateless mode with external state store (Redis / PostgreSQL) | Medium | L |
 | F14 | **mTLS backend connections** | TLS for Gateway → CDA / backend links | Medium | S |
