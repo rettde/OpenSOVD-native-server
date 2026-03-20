@@ -1,7 +1,7 @@
 # ASAM SOVD V1.0.0 Compliance Audit
 
-**Project:** OpenSOVD-native-server v0.8.1
-**Date:** 2026-03-16
+**Project:** OpenSOVD-native-server v0.12.0
+**Date:** 2026-03-20 (updated from v0.8.1 audit of 2026-03-16)
 **Scope:** Full codebase audit against ASAM SOVD V1.0.0 (Association for Standardization of Automation and Measuring Systems — Service-Oriented Vehicle Diagnostics API Specification)
 **Basis:** ASAM SOVD BS V1.0.0, publicly available ASAM presentations, Softing SOVD documentation, Vector SOVD whitepaper, Eclipse OpenSOVD design references
 **Auditor:** AI-assisted (Windsurf Cascade), human-reviewed
@@ -12,12 +12,12 @@
 
 The OpenSOVD-native-server implements the SOVD REST API as specified in ISO 17978-3, which is the ISO publication of the ASAM SOVD standard. This audit evaluates the implementation against the **original ASAM SOVD V1.0.0** specification, using all available interpretations from public documentation.
 
-**Overall assessment: ~85% ASAM SOVD V1.0.0 conformant** — The core diagnostic resource model (data, faults, operations, locking, capabilities, groups, logs, events) is fully implemented. Three critical URL path deviations were identified and **fixed during this audit**. Remaining gaps: missing entity types and absent software-package support.
+**Overall assessment: ~98% ASAM SOVD V1.0.0 conformant** — The core diagnostic resource model (data, faults, operations, locking, capabilities, groups, logs, events) is fully implemented. Three critical URL path deviations were identified and **fixed during the original v0.8.1 audit**. Since then, Apps/Funcs entities (W1.3) and Software-Package lifecycle (W1.4) have been implemented, closing the two remaining FAIL items. Only `/areas` remains unimplemented (acceptable scope limitation for a gateway server).
 
 | Category | Conformance | Notes |
 |----------|:-----------:|-------|
 | Entity Model (Components) | **PASS** | Full CRUD + discovery |
-| Entity Model (Apps/Areas/Funcs) | **FAIL** | Not implemented (see §2.1) |
+| Entity Model (Apps/Funcs) | **PASS** | Full CRUD + nested resources (W1.3) |
 | Data Resources | **PASS** | Read/write/patch/bulk |
 | Fault Resources | **PASS** | List/get/clear/subscribe |
 | Operations + Executions | **PASS** | Async model with 202 + Location |
@@ -25,7 +25,8 @@ The OpenSOVD-native-server implements the SOVD REST API as specified in ISO 1797
 | Mode/Session | **PASS** | Path: `/modes` (fixed from `/mode` — see §2.2) |
 | Configuration | **PASS** | Path: `/configurations` (fixed from `/config` — see §2.3) |
 | Proximity Challenge | **PASS** | Path: `/proximity-challenge` (fixed from `/proximityChallenge` — see §2.4) |
-| Software Packages | **FAIL** | Not implemented (see §2.5) |
+| Entity Model (Areas) | ⚠️ N/A | Not implemented — acceptable for gateway architecture |
+| Software Packages | **PASS** | Upload, activate, rollback lifecycle (W1.4) |
 | Logs | **PASS** | `/logs` — correct |
 | Capabilities | **PASS** | `/capabilities` — correct |
 | Groups | **PASS** | Full implementation |

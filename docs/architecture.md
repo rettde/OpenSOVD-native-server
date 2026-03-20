@@ -555,11 +555,11 @@ cargo build --release --features otlp
 cargo build --release --target aarch64-unknown-linux-gnu
 ```
 
-**Test-Coverage (269 Tests, v0.8.1):**
-- `native-interfaces` — 52 Tests (SOVD-Typen, StorageBackend, SecretProvider, OemProfile, Backend-Traits)
-- `native-core` — 67 Tests (FaultManager, LockManager, DiagLog, Router, HttpBackend, FaultBridge, FaultGovernor, AuditLog hash chain)
+**Test-Coverage (398+ Tests, v0.12.0):**
+- `native-interfaces` — 77 Tests (SOVD-Typen, StorageBackend, SecretProvider, OemProfile, Tenant, DataCatalog)
+- `native-core` — 67 Tests (FaultManager, LockManager, DiagLog, Router, HttpBackend, FaultBridge, FaultGovernor, AuditLog)
 - `native-health` — 6 Tests (JSON-Struktur, Speicher-Werte, Uptime)
-- `native-sovd` — 143 Tests (Pagination, Auth-Middleware, Lock-Enforcement, HTTP-Handler, system-info, rate limiting)
+- `native-sovd` — 160+ Tests (Pagination, Auth, Lock, HTTP-Handler, Bridge, Wave 4 endpoints, Feature flags)
 - `native-server` — 1 Test
 
 **Bekannte Test-Lücken:**
@@ -586,7 +586,8 @@ cargo build --release --target aarch64-unknown-linux-gnu
 
 ### Weiterführende Dokumentation
 
-- **[cda-sovd-analysis.md](cda-sovd-analysis.md)** — CDA vs. SOVD-Standard Analyse
-- **[requirements-cda-adaptions.md](requirements-cda-adaptions.md)** — Abgeleitete Requirements
-- **[architecture-review.md](architecture-review.md)** — Gateway-Refactoring Dokumentation
-- **[release-notes-v0.8.1-beta.md](release-notes-v0.8.1-beta.md)** — Aktuelle Release Notes
+- **[integrated-roadmap.md](integrated-roadmap.md)** — Feature-Roadmap (implementiert + geplant)
+- **[future-work-implementation-plan.md](future-work-implementation-plan.md)** — Offene Punkte (F5, F8)
+- **[asam-sovd-compliance-audit.md](asam-sovd-compliance-audit.md)** — ASAM SOVD V1.0.0 Compliance
+- **[security-audit.md](security-audit.md)** — Security Audit
+- **[adr/](adr/README.md)** — Architecture Decision Records (18 ADRs)

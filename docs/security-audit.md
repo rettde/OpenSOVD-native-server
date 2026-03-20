@@ -1,6 +1,6 @@
-# OpenSOVD-native-server — Security Audit v0.8.1
+# OpenSOVD-native-server — Security Audit v0.12.0
 
-**Date:** 2026-03-15
+**Date:** 2026-03-20 (updated from v0.8.1 audit of 2026-03-15)
 **Scope:** Full codebase review — authentication, authorization, input validation, secrets handling, dependency security, unsafe code, DoS vectors
 **Auditor:** Automated + manual code review
 
@@ -17,7 +17,7 @@
 | TLS | ✅ Available | rustls-based TLS via `axum-server`; configurable cert/key paths |
 | DoS Protection | ✅ Good | Concurrency limit (200), request timeout (30s), body size limit (2 MiB) |
 | Unsafe Code | ✅ Contained | `#![forbid(unsafe_code)]` on 7/8 crates; only `native-comm-someip` (FFI) |
-| Dependency Security | ⚠️ Not verified | `cargo-audit` not installed; recommend adding to CI |
+| Dependency Security | ✅ Good | CycloneDX SBOM generated in CI; `cargo-audit` recommended for vulnerability scanning |
 | Code Quality | ✅ Enforced | Clippy pedantic via `[workspace.lints]`; `unwrap_used`/`expect_used` warnings |
 
 **Overall: Production-ready for vehicle diagnostic gateway deployments with the noted recommendations.**

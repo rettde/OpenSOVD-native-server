@@ -48,12 +48,6 @@ Format follows [Michael Nygard's ADR template](https://cognitect.com/blog/2011/1
 | [A4.2](A4.2-data-catalog-provider-trait.md) | DataCatalogProvider Trait | ✅ Accepted | `native-interfaces/src/data_catalog.rs`, `native-sovd/src/state.rs` |
 | [A4.3](A4.3-batch-export-format.md) | Batch Export Format (NDJSON) | ✅ Accepted | `native-sovd/src/routes.rs` |
 
-### Other
-
-| ID | Title | Status | Key files |
-|----|-------|--------|-----------|
-| [ADR-0001](ADR-0001-mbds-specific-adaptations.md) | MBDS-Specific Adaptations | ✅ Accepted | `native-sovd/src/oem_mbds.rs` (proprietary, .gitignored) |
-
 ---
 
 ## Conventions
