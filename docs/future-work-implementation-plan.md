@@ -8,16 +8,16 @@
 
 ## Overview
 
-| ID | Item | Effort | Phase | Depends on |
-|----|------|--------|-------|------------|
-| F1 | Persistent storage (sled) | M | 1 | — |
-| F2 | OTLP tracing | S | 1 | — |
-| F3 | WebSocket bridge | L | 2 | F1 |
-| F4 | Vault integration | M | 2 | — |
-| F5 | E2E test suite | L | 3 | F1, F3 |
-| F6 | SBOM / supply chain | S | 1 | — |
-| F7 | Prometheus scrape endpoint | S | 2 | — |
-| F8 | SOME/IP real transport | L | 3 | — (hardware) |
+| ID | Item | Effort | Phase | Status |
+|----|------|--------|-------|--------|
+| F1 | Persistent storage (sled) | M | 1 | ✅ Done — `persist` feature, 13 tests |
+| F2 | OTLP tracing | S | 1 | ✅ Done — `otlp` feature, 11 handlers instrumented |
+| F3 | WebSocket bridge | L | 2 | ✅ Done — `ws-bridge` feature, 8 tests |
+| F4 | Vault integration | M | 2 | ✅ Done — `vault` feature, 10 tests |
+| F5 | E2E test suite | L | 3 | Planned |
+| F6 | SBOM / supply chain | S | 1 | ✅ Done — CI job, CycloneDX artifact |
+| F7 | Prometheus scrape endpoint | S | 2 | ✅ Done — `MetricsConfig` gates `/metrics` |
+| F8 | SOME/IP real transport | L | 3 | Planned (requires hardware) |
 
 **Effort key:** S = 1–2 days, M = 3–5 days, L = 1–2 weeks
 

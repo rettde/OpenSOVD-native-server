@@ -2,8 +2,9 @@
 
 **ISO 17978-3 (SOVD) conformant diagnostic server in Rust — part of the [Eclipse OpenSOVD](https://github.com/eclipse-opensovd) ecosystem.**
 
-[![CI](https://github.com/eclipse-opensovd/OpenSOVD-native-server/actions/workflows/ci.yml/badge.svg)](https://github.com/eclipse-opensovd/OpenSOVD-native-server/actions)
+[![CI](https://github.com/rettde/OpenSOVD-native-server/actions/workflows/ci.yml/badge.svg)](https://github.com/rettde/OpenSOVD-native-server/actions)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 
 ---
 
@@ -89,7 +90,11 @@ SOVD Clients (HTTP/JSON)
 - **Multi-Tenant** — JWT `tenant_id` claim, namespace isolation, per-tenant policy
 - **Cloud Bridge** — Vehicle↔cloud brokered session management
 - **Data Catalog** — COVESA VSS ontology, semantic metadata, NDJSON batch export, schema introspection
-- **398 tests**, Clippy pedantic clean, `#![forbid(unsafe_code)]` (except vSomeIP FFI)
+- **Persistent Storage** — Optional `sled` embedded DB via `persist` feature flag
+- **Vault Secrets** — Optional HashiCorp Vault KV v2 provider via `vault` feature flag
+- **WebSocket Bridge** — Optional `tokio-tungstenite` cloud↔vehicle tunnel via `ws-bridge` feature flag
+- **OTLP Tracing** — Optional OpenTelemetry export via `otlp` feature flag
+- **398+ tests**, Clippy pedantic clean, `#![forbid(unsafe_code)]` (except vSomeIP FFI)
 
 ## Workspace Structure
 
@@ -102,7 +107,30 @@ OpenSOVD-native-server/
 ├── native-server/           # Main binary
 ├── native-comm-someip/      # COVESA/vsomeip FFI (SOME/IP)
 ├── examples/demo-ecu/       # Example: mock ECU backend (BMS + Climate)
-└── config/                  # TOML configuration
+├── config/                  # TOML configuration
+├── deploy/                  # Dockerfile, Helm chart, systemd unit
+├── docs/                    # Architecture, ADRs, roadmap, compliance audits
+└── .github/workflows/       # CI pipeline (clippy, test, fmt, SBOM, Docker)
+```
+
+## Feature Flags (Cargo)
+
+All optional features are disabled by default to keep the dependency footprint minimal.
+
+| Feature | Crate | Description |
+|---------|-------|-------------|
+| `persist` | native-core | Persistent fault/audit storage via embedded `sled` DB |
+| `vault` | native-core | HashiCorp Vault KV v2 secret provider (auto-populates auth secrets) |
+| `ws-bridge` | native-core | WebSocket bridge transport via `tokio-tungstenite` |
+| `otlp` | native-server | OpenTelemetry OTLP trace export (Jaeger, Tempo, etc.) |
+| `vsomeip-ffi` | native-comm-someip | Real COVESA/vsomeip C FFI bindings (requires `libvsomeip3`) |
+
+```bash
+# Build with specific features
+cargo build -p opensovd-native-server --features vault,ws-bridge
+
+# Build with all optional features
+cargo build -p opensovd-native-server --features vault,ws-bridge,otlp,persist
 ```
 
 ## SOVD v1 API Endpoints
@@ -265,21 +293,22 @@ COVESA VSS semantic data catalog, NDJSON batch export (snapshot + faults), fault
 > For the full research, gap analysis, and prioritization see
 > [docs/integrated-roadmap.md](docs/integrated-roadmap.md).
 
-### Future Work
+### Production Enhancements (Future Work)
 
-All waves are complete. These are **optional enhancements** for production deployments:
+All waves are complete. Optional enhancements for production deployments:
 
-- **F1 — Persistent storage** — `SledStorage` or PostgreSQL via the `StorageBackend` trait (currently in-memory)
-- **F2 — OTLP tracing** — Enable the `otlp` feature flag, connect to Jaeger/Tempo (layer already wired)
-- **F3 — WebSocket bridge** — Real `WsBridgeTransport` for cloud↔vehicle tunneling (`BridgeTransport` trait ready)
-- **F4 — Vault integration** — `VaultSecretProvider` for HashiCorp Vault / AWS Secrets Manager (`SecretProvider` trait ready)
-- **F5 — E2E tests** — Testcontainers with CDA + demo-ecu for full gateway round-trip
-- **F6 — SBOM** — `cargo-cyclonedx` or `syft` in CI for UNECE R156 / ISO 24089
-- **F7 — Prometheus scrape** — `/metrics` endpoint (RED metrics already recorded internally)
-- **F8 — SOME/IP real transport** — Validate `native-comm-someip` FFI against real COVESA/vsomeip
+| ID | Area | Status | Notes |
+|----|------|--------|-------|
+| F1 | **Persistent storage** | ✅ Done | `SledStorage` behind `persist` feature; 13 tests |
+| F2 | **OTLP tracing** | ✅ Done | `otlp` feature; 11 instrumented handlers; Jaeger Compose stack |
+| F3 | **WebSocket bridge** | ✅ Done | `WsBridgeTransport` behind `ws-bridge` feature; 8 tests |
+| F4 | **Vault integration** | ✅ Done | `VaultSecretProvider` behind `vault` feature; 10 tests |
+| F5 | **E2E test suite** | Planned | Testcontainers with CDA + demo-ecu for gateway round-trip |
+| F6 | **SBOM / supply chain** | ✅ Done | `cargo-cyclonedx` CI job, CycloneDX JSON artifact |
+| F7 | **Prometheus scrape** | ✅ Done | `MetricsConfig` gates `/metrics` endpoint via config |
+| F8 | **SOME/IP real transport** | Planned | Validate `native-comm-someip` FFI against real COVESA/vsomeip |
 
-> Implementation plan with phases, code snippets, and acceptance criteria:
-> [docs/future-work-implementation-plan.md](docs/future-work-implementation-plan.md)
+> Full roadmap with architecture details: [docs/integrated-roadmap.md](docs/integrated-roadmap.md)
 
 ## License
 

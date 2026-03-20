@@ -73,7 +73,7 @@ jobs:
       # ── Install Redocly CLI + DSA SOVD rules (from GitHub, no fork) ─
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
       - name: Install DSA SOVD CDF Validator
         run: |
           npm install --no-save @redocly/cli@latest

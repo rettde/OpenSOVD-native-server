@@ -205,3 +205,11 @@ and `__` as separator for nested keys:
 | `SOVD_RATE_LIMIT__MAX_REQUESTS` | `100` | Requests per window |
 | `SOVD_RATE_LIMIT__WINDOW_SECS` | `60` | Rate limit window |
 | `SOVD_DEPLOYMENT_LABEL` | — | Canary routing label |
+| `SOVD_METRICS__ENABLED` | `true` | Enable `/metrics` Prometheus endpoint |
+| `SOVD_BRIDGE__ENABLED` | `false` | Enable cloud bridge mode |
+| `SOVD_BRIDGE__LISTEN_ADDR` | — | WebSocket listener address (requires `ws-bridge`) |
+| `SOVD_STORAGE__BACKEND` | `memory` | `memory` or `sled` (requires `persist`) |
+| `SOVD_STORAGE__SLED_PATH` | `./data/sovd.sled` | Sled database path |
+| `SOVD_SECRETS__PROVIDER` | `env` | `env`, `vault`, or `static` (Vault requires `vault`) |
+| `SOVD_SECRETS__VAULT_ADDR` | — | Vault server address |
+| `VAULT_TOKEN` | — | Vault auth token (env fallback) |

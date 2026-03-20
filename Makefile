@@ -4,7 +4,7 @@
 # Usage:
 #   make check          — full quality gate (lint + test + build)
 #   make lint           — clippy pedantic (workspace lints from Cargo.toml)
-#   make test           — run all 227+ tests, assert zero failures
+#   make test           — run all 398+ tests, assert zero failures
 #   make coverage       — generate test coverage report (requires cargo-llvm-cov)
 #   make audit          — dependency vulnerability scan (requires cargo-audit)
 #   make build-release  — release build (standard + gateway-only)
@@ -14,7 +14,7 @@
 .PHONY: check lint test coverage audit build-release ci clean
 
 # ── Configurable thresholds ─────────────────────────────────────────────────
-MIN_TESTS      ?= 227
+MIN_TESTS      ?= 398
 MIN_COVERAGE   ?= 60
 
 # ── Lint (clippy pedantic — enforced via [workspace.lints] in Cargo.toml) ──

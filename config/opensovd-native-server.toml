@@ -55,3 +55,36 @@ enabled = false
 # api_prefix = "/sovd/v1"
 # timeout_secs = 30
 # component_ids = ["brake-ecu", "eps-ecu", "bms-ecu", "gateway"]
+
+# ═════════════════════════════════════════════════════════════════════════════
+# OPTIONAL FEATURES — only effective when compiled with the matching feature
+# ═════════════════════════════════════════════════════════════════════════════
+
+# ── Rate Limiting ────────────────────────────────────────────────────────
+[rate_limit]
+enabled = false
+# max_requests = 100
+# window_secs = 60
+
+# ── Prometheus Metrics (F7) ──────────────────────────────────────────────
+[metrics]
+enabled = true
+# path = "/metrics"
+
+# ── Cloud Bridge (F3) ───────────────────────────────────────────────────
+[bridge]
+enabled = false
+# listen_addr = "127.0.0.1:9090"    # WebSocket listener (requires ws-bridge feature)
+
+# ── Persistent Storage (F1, requires `persist` feature) ─────────────────
+[storage]
+backend = "memory"                    # "memory" (default) | "sled"
+# sled_path = "./data/sovd.sled"     # only used when backend = "sled"
+
+# ── Secret Provider (F4, Vault requires `vault` feature) ────────────────
+[secrets]
+provider = "env"                      # "env" (default) | "vault" | "static"
+# vault_addr = "http://vault:8200"
+# vault_mount = "secret"
+# vault_path_prefix = "sovd/"
+# vault_cache_ttl_secs = 300
