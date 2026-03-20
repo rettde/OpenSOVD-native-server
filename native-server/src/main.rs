@@ -21,8 +21,8 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 use dashmap::DashMap;
 use native_core::{
-    AuditLog, ComponentRouter, DiagLog, FaultBridge, FaultManager, LockManager, SovdHttpBackend,
-    SovdHttpBackendConfig,
+    AuditLog, ComponentRouter, DiagLog, FaultBridge, FaultManager, HistoryConfig, HistoryService,
+    LockManager, SovdHttpBackend, SovdHttpBackendConfig,
 };
 use native_health::HealthMonitor;
 use native_interfaces::bridge::BridgeConfig;
@@ -370,6 +370,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let audit_log = Arc::new(AuditLog::new());
     info!("Audit log enabled (in-memory, {} max entries)", 10_000);
 
+    // ── Historical diagnostic storage (W2.2) ──────────────────────────
+    let history_store = Arc::new(native_interfaces::InMemoryStorage::new());
+    let history = Arc::new(HistoryService::new(
+        history_store,
+        HistoryConfig::default(),
+    ));
+    info!("History service enabled (in-memory, 90-day retention)");
+
     let state = AppState {
         backend: router.clone(),
         extended_backend: router.clone(),
@@ -378,6 +386,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             fault_manager,
             lock_manager,
             diag_log,
+            history,
         },
         security: native_sovd::SecurityState {
             oem_profile,
@@ -398,6 +407,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             execution_store: Arc::new(DashMap::new()),
             proximity_store: Arc::new(DashMap::new()),
             package_store: Arc::new(DashMap::new()),
+            feature_flags: Arc::new(native_interfaces::FeatureFlags::new()),
         },
         data_catalog: Arc::new(native_interfaces::StaticDataCatalogProvider::new()),
     };

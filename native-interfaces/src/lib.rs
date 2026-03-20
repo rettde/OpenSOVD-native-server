@@ -12,6 +12,7 @@ pub mod bridge;
 pub mod data_catalog;
 pub mod diag;
 pub mod error;
+pub mod feature_flags;
 pub mod oem;
 pub mod secrets;
 pub mod sovd;
@@ -32,4 +33,5 @@ pub use error::{ConnectionError, DiagServiceError, DoipGatewaySetupError, SomeIp
 pub use oem::{DefaultProfile, OemProfile};
 pub use secrets::{EnvSecretProvider, SecretProvider, StaticSecretProvider};
 pub use storage::{InMemoryStorage, StorageBackend};
+pub use feature_flags::{FeatureFlagConfig, FeatureFlags, SharedFeatureFlags};
 pub use tenant::{MultiTenantConfig, TenantContext, TenantIsolation};

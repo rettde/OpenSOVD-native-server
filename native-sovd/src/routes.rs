@@ -688,6 +688,12 @@ pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
                 async move { handle.render() }
             }),
         )
+        // Feature flags admin endpoints (E2.4, public for operational visibility)
+        .route("/x-admin/features", get(list_feature_flags))
+        .route(
+            "/x-admin/features/{flag_name}",
+            get(get_feature_flag).put(set_feature_flag),
+        )
         // Kubernetes-style probes (public, outside auth)
         .route("/healthz", get(liveness_probe))
         .route("/readyz", get(readiness_probe))
@@ -1027,6 +1033,10 @@ async fn list_faults(
         .diag
         .fault_manager
         .get_faults_for_component(&component_id);
+    // W2.2: Record fault snapshot to history
+    for fault in &faults {
+        state.diag.history.record_fault(fault);
+    }
     Ok(Json(
         paginate(faults, &params)?.with_context("$metadata#faults"),
     ))
@@ -1038,6 +1048,11 @@ async fn clear_faults(
     Path(component_id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<SovdErrorEnvelope>)> {
     require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
+    // W2.2: Snapshot faults to history before clearing
+    let faults_before = state.diag.fault_manager.get_faults_for_component(&component_id);
+    for fault in &faults_before {
+        state.diag.history.record_fault(fault);
+    }
     // Clear via backend (forwards to CDA or local UDS)
     let _ = state.backend.clear_faults(&component_id).await;
     state
@@ -1613,6 +1628,68 @@ async fn readiness_probe(
     }
 }
 
+// ── Feature Flags Admin (E2.4) ───────────────────────────────────────────
+
+/// GET /x-admin/features — list all feature flags with current state.
+async fn list_feature_flags(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let flags = state.runtime.feature_flags.snapshot();
+    Json(serde_json::json!({
+        "@odata.context": "$metadata#feature-flags",
+        "value": flags,
+    }))
+}
+
+/// GET /x-admin/features/{flag_name} — get a single flag's state.
+async fn get_feature_flag(
+    State(state): State<AppState>,
+    Path(flag_name): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    match state.runtime.feature_flags.get(&flag_name) {
+        Some(flag) => Ok(Json(serde_json::json!(flag))),
+        None => Err(sovd_error(
+            SovdErrorCode::NotFound,
+            &format!("Unknown feature flag: {flag_name}"),
+        )),
+    }
+}
+
+/// PUT /x-admin/features/{flag_name} — set a feature flag.
+///
+/// Body: `{"enabled": true}` or `{"enabled": false}`
+async fn set_feature_flag(
+    State(state): State<AppState>,
+    Path(flag_name): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    let enabled = body["enabled"].as_bool().ok_or_else(|| {
+        sovd_error(
+            SovdErrorCode::BadRequest,
+            "Body must contain {\"enabled\": true|false}",
+        )
+    })?;
+
+    if state.runtime.feature_flags.set(&flag_name, enabled) {
+        // Audit the flag change
+        state.security.audit_log.record(
+            "admin",
+            SovdAuditAction::WriteData,
+            &format!("x-admin/features/{flag_name}"),
+            "feature-flags",
+            "PUT",
+            "success",
+            Some(&format!("enabled={enabled}")),
+            None,
+        );
+        let flag = state.runtime.feature_flags.get(&flag_name).unwrap();
+        Ok(Json(serde_json::json!(flag)))
+    } else {
+        Err(sovd_error(
+            SovdErrorCode::NotFound,
+            &format!("Unknown feature flag: {flag_name}"),
+        ))
+    }
+}
+
 // ── Audit Trail (Wave 1) ─────────────────────────────────────────────────
 
 /// Query parameters for the /audit endpoint.
@@ -1633,20 +1710,51 @@ struct AuditQueryParams {
     /// Maximum number of results (default: 100)
     #[serde(default)]
     limit: Option<usize>,
+    /// Start of time range (Unix ms, inclusive) — queries historical storage (W2.2)
+    #[serde(default)]
+    from: Option<i64>,
+    /// End of time range (Unix ms, inclusive) — queries historical storage (W2.2)
+    #[serde(default)]
+    to: Option<i64>,
 }
 
 async fn list_audit_entries(
     State(state): State<AppState>,
     axum::extract::Query(params): axum::extract::Query<AuditQueryParams>,
 ) -> Json<Collection<native_interfaces::sovd::SovdAuditEntry>> {
-    let filter = native_core::audit_log::AuditFilter {
-        caller: params.caller,
-        action: params.action,
-        target: params.target,
-        outcome: params.outcome,
-        limit: Some(params.limit.unwrap_or(100)),
+    let use_history = params.from.is_some() || params.to.is_some();
+    let limit = params.limit.unwrap_or(100);
+
+    let entries = if use_history {
+        // W2.2: Query historical audit storage with time-range
+        let from = params.from.unwrap_or(0);
+        let to = params.to.unwrap_or(i64::MAX);
+        let mut hist = state.diag.history.query_audit(from, to, limit);
+        // Apply additional filters on historical results
+        if let Some(ref caller) = params.caller {
+            hist.retain(|e| e.caller == *caller);
+        }
+        if let Some(ref action) = params.action {
+            hist.retain(|e| e.action == *action);
+        }
+        if let Some(ref target) = params.target {
+            hist.retain(|e| e.target.starts_with(target.as_str()));
+        }
+        if let Some(ref outcome) = params.outcome {
+            hist.retain(|e| e.outcome == *outcome);
+        }
+        hist
+    } else {
+        // Query in-memory ring buffer (default)
+        let filter = native_core::audit_log::AuditFilter {
+            caller: params.caller,
+            action: params.action,
+            target: params.target,
+            outcome: params.outcome,
+            limit: Some(limit),
+        };
+        state.security.audit_log.query(&filter)
     };
-    let entries = state.security.audit_log.query(&filter);
     Json(Collection::new(entries).with_context("$metadata#audit"))
 }
 
@@ -1844,6 +1952,10 @@ struct FaultExportParams {
     component_id: Option<String>,
     /// Minimum severity filter
     severity: Option<String>,
+    /// Start of time range (Unix ms, inclusive) — queries historical storage (W2.2)
+    from: Option<i64>,
+    /// End of time range (Unix ms, inclusive) — queries historical storage (W2.2)
+    to: Option<i64>,
 }
 
 async fn export_faults(
@@ -1869,6 +1981,7 @@ async fn export_faults(
     );
 
     let schema_version = state.data_catalog.schema_version();
+    let use_history = params.from.is_some() || params.to.is_some();
 
     let components = state.backend.list_components();
     let target_components: Vec<_> = if let Some(ref cid) = params.component_id {
@@ -1892,41 +2005,70 @@ async fn export_faults(
 
     let meta = serde_json::json!({
         "_meta": true,
-        "exportType": "fault-export",
+        "exportType": if use_history { "fault-history-export" } else { "fault-export" },
         "exportedAt": chrono::Utc::now().to_rfc3339(),
         "serverVersion": env!("CARGO_PKG_VERSION"),
         "schemaVersion": schema_version,
         "componentFirmwareVersions": component_versions,
+        "timeRange": if use_history {
+            serde_json::json!({"from": params.from, "to": params.to})
+        } else {
+            serde_json::Value::Null
+        },
     });
     lines.push(serde_json::to_string(&meta).unwrap_or_default());
 
-    for component in &target_components {
-        if let Ok(faults) = state.backend.read_faults(&component.id).await {
-            for fault in faults {
-                // Apply severity filter
-                if let Some(ref min_sev) = params.severity {
-                    let passes = match min_sev.as_str() {
-                        "critical" => matches!(
-                            fault.severity,
-                            native_interfaces::sovd::SovdFaultSeverity::Critical
-                        ),
-                        "high" => matches!(
-                            fault.severity,
-                            native_interfaces::sovd::SovdFaultSeverity::Critical
-                                | native_interfaces::sovd::SovdFaultSeverity::High
-                        ),
-                        "medium" => !matches!(
-                            fault.severity,
-                            native_interfaces::sovd::SovdFaultSeverity::Low
-                        ),
-                        _ => true,
-                    };
-                    if !passes {
-                        continue;
-                    }
-                }
+    // W2.2: If from/to are specified, query historical storage instead of live
+    let severity_filter = |fault: &native_interfaces::sovd::SovdFault| -> bool {
+        if let Some(ref min_sev) = params.severity {
+            match min_sev.as_str() {
+                "critical" => matches!(
+                    fault.severity,
+                    native_interfaces::sovd::SovdFaultSeverity::Critical
+                ),
+                "high" => matches!(
+                    fault.severity,
+                    native_interfaces::sovd::SovdFaultSeverity::Critical
+                        | native_interfaces::sovd::SovdFaultSeverity::High
+                ),
+                "medium" => !matches!(
+                    fault.severity,
+                    native_interfaces::sovd::SovdFaultSeverity::Low
+                ),
+                _ => true,
+            }
+        } else {
+            true
+        }
+    };
+
+    if use_history {
+        // Query historical fault storage (W2.2)
+        let from = params.from.unwrap_or(0);
+        let to = params.to.unwrap_or(i64::MAX);
+        let historical = state.diag.history.query_faults(
+            params.component_id.as_deref(),
+            from,
+            to,
+        );
+        for fault in historical {
+            if severity_filter(&fault) {
                 if let Ok(json) = serde_json::to_string(&fault) {
                     lines.push(json);
+                }
+            }
+        }
+    } else {
+        // Query live faults from backends
+        for component in &target_components {
+            if let Ok(faults) = state.backend.read_faults(&component.id).await {
+                for fault in faults {
+                    if !severity_filter(&fault) {
+                        continue;
+                    }
+                    if let Ok(json) = serde_json::to_string(&fault) {
+                        lines.push(json);
+                    }
                 }
             }
         }
@@ -3271,7 +3413,7 @@ mod tests {
 
     fn test_state() -> AppState {
         use crate::state::{DiagState, RuntimeState, SecurityState};
-        use native_core::{AuditLog, ComponentRouter, DiagLog, FaultManager, LockManager};
+        use native_core::{AuditLog, ComponentRouter, DiagLog, FaultManager, HistoryConfig, HistoryService, LockManager};
         use native_health::HealthMonitor;
         use std::sync::Arc;
 
@@ -3288,6 +3430,10 @@ mod tests {
                 fault_manager: Arc::new(FaultManager::new()),
                 lock_manager: Arc::new(LockManager::new()),
                 diag_log: Arc::new(DiagLog::new()),
+                history: Arc::new(HistoryService::new(
+                    Arc::new(native_interfaces::InMemoryStorage::new()),
+                    HistoryConfig::default(),
+                )),
             },
             security: SecurityState {
                 oem_profile: Arc::new(native_interfaces::DefaultProfile),
@@ -3299,6 +3445,7 @@ mod tests {
                 execution_store: Arc::new(dashmap::DashMap::new()),
                 proximity_store: Arc::new(dashmap::DashMap::new()),
                 package_store: Arc::new(dashmap::DashMap::new()),
+                feature_flags: Arc::new(native_interfaces::FeatureFlags::new()),
             },
             data_catalog: Arc::new(native_interfaces::StaticDataCatalogProvider::new()),
         }
@@ -4884,6 +5031,10 @@ mod mock_backend_tests {
                 fault_manager: Arc::new(FaultManager::new()),
                 lock_manager: Arc::new(LockManager::new()),
                 diag_log: Arc::new(DiagLog::new()),
+                history: Arc::new(native_core::HistoryService::new(
+                    Arc::new(native_interfaces::InMemoryStorage::new()),
+                    native_core::HistoryConfig::default(),
+                )),
             },
             security: SecurityState {
                 oem_profile: Arc::new(native_interfaces::DefaultProfile),
@@ -4895,6 +5046,7 @@ mod mock_backend_tests {
                 execution_store: Arc::new(dashmap::DashMap::new()),
                 proximity_store: Arc::new(dashmap::DashMap::new()),
                 package_store: Arc::new(dashmap::DashMap::new()),
+                feature_flags: Arc::new(native_interfaces::FeatureFlags::new()),
             },
             data_catalog: Arc::new(native_interfaces::StaticDataCatalogProvider::new()),
         }

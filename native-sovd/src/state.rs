@@ -15,7 +15,7 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use native_core::{AuditLog, DiagLog, FaultManager, LockManager};
+use native_core::{AuditLog, DiagLog, FaultManager, HistoryService, LockManager};
 use native_health::HealthMonitor;
 use native_interfaces::data_catalog::DataCatalogProvider;
 use native_interfaces::oem::OemProfile;
@@ -34,6 +34,8 @@ pub struct DiagState {
     pub lock_manager: Arc<LockManager>,
     /// Diagnostic log ring buffer (SOVD §7.10)
     pub diag_log: Arc<DiagLog>,
+    /// Historical diagnostic storage — time-range queries (W2.2)
+    pub history: Arc<HistoryService>,
 }
 
 // ── Sub-state: Security ─────────────────────────────────────────────────────
@@ -62,6 +64,8 @@ pub struct RuntimeState {
     pub proximity_store: Arc<DashMap<String, SovdProximityChallenge>>,
     /// Software package lifecycle store: "{component_id}/{package_id}" → SovdSoftwarePackage
     pub package_store: Arc<DashMap<String, SovdSoftwarePackage>>,
+    /// Runtime feature flags (E2.4) — lock-free atomic toggles
+    pub feature_flags: native_interfaces::SharedFeatureFlags,
 }
 
 // ── Top-level AppState ──────────────────────────────────────────────────────
