@@ -983,6 +983,7 @@ struct VariantFilter {
     hardware_variant: Option<String>,
 }
 
+#[tracing::instrument(skip(state, params, variant))]
 async fn list_components(
     State(state): State<AppState>,
     axum::extract::Query(params): axum::extract::Query<PaginationParams>,
@@ -1006,6 +1007,7 @@ async fn list_components(
     ))
 }
 
+#[tracing::instrument(skip(state))]
 async fn get_component(
     State(state): State<AppState>,
     Path(component_id): Path<String>,
@@ -1072,6 +1074,7 @@ async fn disconnect_component(
 
 // ── Faults ──────────────────────────────────────────────────────────────────
 
+#[tracing::instrument(skip(state, params))]
 async fn list_faults(
     State(state): State<AppState>,
     Path(component_id): Path<String>,
@@ -1090,6 +1093,7 @@ async fn list_faults(
     ))
 }
 
+#[tracing::instrument(skip(state, caller))]
 async fn clear_faults(
     State(state): State<AppState>,
     caller: CallerIdentity,
@@ -1123,6 +1127,7 @@ async fn clear_faults(
 
 // ── Data ────────────────────────────────────────────────────────────────────
 
+#[tracing::instrument(skip(state, headers))]
 async fn read_data(
     State(state): State<AppState>,
     headers: http::HeaderMap,
@@ -1173,6 +1178,7 @@ struct WriteDataRequest {
     value: serde_json::Value,
 }
 
+#[tracing::instrument(skip(state, caller, body))]
 async fn write_data(
     State(state): State<AppState>,
     caller: CallerIdentity,
@@ -1257,6 +1263,8 @@ struct ExecuteOperationRequest {
     params: Option<String>,
 }
 
+#[tracing::instrument(skip(state, caller, body))]
+#[allow(clippy::type_complexity)]
 async fn execute_operation(
     State(state): State<AppState>,
     caller: CallerIdentity,
@@ -2099,6 +2107,7 @@ struct FaultExportParams {
     to: Option<i64>,
 }
 
+#[tracing::instrument(skip(state, params, caller))]
 #[allow(clippy::too_many_lines)]
 async fn export_faults(
     State(state): State<AppState>,
@@ -2383,6 +2392,7 @@ async fn subscribe_data_changes(
 
 // ── Data Listing (SOVD §7.5) ─────────────────────────────────────────────
 
+#[tracing::instrument(skip(state, params))]
 async fn list_data(
     State(state): State<AppState>,
     Path(component_id): Path<String>,
@@ -2451,6 +2461,7 @@ struct LockRequest {
     expires: Option<String>,
 }
 
+#[tracing::instrument(skip(state, caller, body))]
 async fn acquire_lock(
     State(state): State<AppState>,
     Path(component_id): Path<String>,
@@ -2494,6 +2505,7 @@ async fn get_lock(
         .ok_or_else(|| not_found(&format!("No lock on component '{component_id}'")))
 }
 
+#[tracing::instrument(skip(state, caller))]
 async fn release_lock(
     State(state): State<AppState>,
     Path(component_id): Path<String>,

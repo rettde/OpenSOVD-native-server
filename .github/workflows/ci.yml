@@ -83,6 +83,23 @@ jobs:
       - name: Redocly lint (SOVD CDF rules)
         run: npx @redocly/cli lint --config .redocly.yaml openapi-spec.json
 
+  sbom:
+    name: SBOM (CycloneDX)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx --locked
+      - name: Generate SBOM
+        run: cargo cyclonedx --format json --all
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: "**/bom.json"
+
   docker:
     name: Docker build
     runs-on: ubuntu-latest

@@ -7,6 +7,32 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.11.0] — 2026-03-20
+
+### Phase 1 Future Work — Persistent Storage, OTLP Tracing, SBOM
+
+#### F1: Persistent Storage (`persist` feature)
+- **`SledStorage`** — `StorageBackend` implementation using embedded `sled` key-value database
+- Feature-gated behind `persist` Cargo feature (`native-core/persist`, `native-server/persist`)
+- `StorageConfig` in `AppConfig` with `backend` selector (`memory` / `sled`) and `sled_path` option
+- Wired into `HistoryService` in `main()` — selects backend at startup based on config
+- **13 unit tests** covering put/get/delete/list/count/flush/reopen scenarios
+
+#### F2: OTLP Distributed Tracing (`otlp` feature)
+- Fixed `opentelemetry_sdk` 0.27 API: `TracerProvider` builder, `with_simple_exporter`, trait imports
+- Restructured tracing init with macro-based OTLP layer to avoid type unification across JSON/plain branches
+- **`#[tracing::instrument]`** on 11 key route handlers: `list_components`, `get_component`, `list_data`, `read_data`, `write_data`, `list_faults`, `clear_faults`, `execute_operation`, `acquire_lock`, `release_lock`, `export_faults`
+- Docker Compose observability stack: `deploy/docker-compose.observability.yml` (Jaeger all-in-one)
+
+#### F6: SBOM / Supply Chain
+- CI job: `cargo-cyclonedx` generates CycloneDX JSON SBOM artifact (UNECE R156 / ISO 24089)
+
+### Stats
+- **411 tests** (398 base + 13 sled), all passing
+- Clippy clean (workspace + `--features otlp` + `--features persist`)
+
+---
+
 ## [0.10.1] — 2026-03-20
 
 ### Enterprise Hardening Audit — Feature-Flag Integration & Gap Fixes

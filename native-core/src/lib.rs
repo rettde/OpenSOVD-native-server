@@ -36,6 +36,8 @@ pub mod history;
 pub mod http_backend;
 pub mod lock_manager;
 pub mod router;
+#[cfg(feature = "persist")]
+pub mod sled_storage;
 
 // ── Re-exports ──────────────────────────────────────────────────────────────
 pub use audit_log::{AuditLog, AuditLogConfig};
@@ -48,3 +50,5 @@ pub use history::{HistoryConfig, HistoryService};
 pub use http_backend::{SovdHttpBackend, SovdHttpBackendConfig};
 pub use lock_manager::LockManager;
 pub use router::ComponentRouter;
+#[cfg(feature = "persist")]
+pub use sled_storage::SledStorage;

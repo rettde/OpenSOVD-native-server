@@ -63,6 +63,9 @@ struct AppConfig {
     /// Multi-tenant configuration (Wave 3, A3.2)
     #[serde(default)]
     tenant: MultiTenantConfig,
+    /// Persistent storage configuration (F1)
+    #[serde(default)]
+    storage: StorageConfig,
 
     // ── Backend configuration ───────────────────────────────────────────
     /// External SOVD backends (CDA instances, native SOVD endpoints)
@@ -123,6 +126,41 @@ impl Default for LoggingConfig {
             level: "info".to_owned(),
             format: Self::default_format(),
             otlp_endpoint: None,
+        }
+    }
+}
+
+/// Persistent storage backend selection (F1).
+///
+/// ```toml
+/// [storage]
+/// backend = "sled"                    # "memory" (default) | "sled"
+/// sled_path = "./data/sovd.sled"      # only used when backend = "sled"
+/// ```
+#[derive(Debug, Deserialize)]
+struct StorageConfig {
+    /// Storage backend: "memory" (default, volatile) or "sled" (persistent, requires `persist` feature).
+    #[serde(default = "StorageConfig::default_backend")]
+    backend: String,
+    /// Path to sled database directory (only used when backend = "sled").
+    #[serde(default = "StorageConfig::default_sled_path")]
+    sled_path: String,
+}
+
+impl StorageConfig {
+    fn default_backend() -> String {
+        "memory".to_owned()
+    }
+    fn default_sled_path() -> String {
+        "./data/sovd.sled".to_owned()
+    }
+}
+
+impl Default for StorageConfig {
+    fn default() -> Self {
+        Self {
+            backend: Self::default_backend(),
+            sled_path: Self::default_sled_path(),
         }
     }
 }
@@ -226,51 +264,75 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dlt_layer = DltTextLayer::new(&config.dlt);
     let use_json = config.logging.format.eq_ignore_ascii_case("json");
 
-    // OTLP layer (A2.4) — only available with `otlp` feature flag
+    // OTLP trace provider (A2.4) — created once, layer built per-branch for type inference
     #[cfg(feature = "otlp")]
-    let otlp_layer = config.logging.otlp_endpoint.as_ref().map(|endpoint| {
+    let otlp_provider = config.logging.otlp_endpoint.as_ref().map(|endpoint| {
         use opentelemetry_otlp::WithExportConfig;
         let exporter = opentelemetry_otlp::SpanExporter::builder()
             .with_tonic()
             .with_endpoint(endpoint)
             .build()
             .expect("OTLP exporter init failed");
-        let tracer = opentelemetry_sdk::trace::SdkTracerProvider::builder()
-            .with_batch_exporter(exporter)
-            .build();
-        let layer = tracing_opentelemetry::layer().with_tracer(tracer.tracer("opensovd-native"));
-        info!(endpoint = %endpoint, "OpenTelemetry OTLP export enabled");
-        layer
+        opentelemetry_sdk::trace::TracerProvider::builder()
+            .with_simple_exporter(exporter)
+            .build()
     });
+
     #[cfg(not(feature = "otlp"))]
-    let otlp_layer: Option<tracing_subscriber::layer::Identity> = {
-        if config.logging.otlp_endpoint.is_some() {
-            eprintln!(
-                "Warning: otlp_endpoint configured but `otlp` feature not enabled — ignoring"
-            );
-        }
-        None
-    };
+    if config.logging.otlp_endpoint.is_some() {
+        eprintln!("Warning: otlp_endpoint configured but `otlp` feature not enabled — ignoring");
+    }
+
+    // Macro: build an OTLP layer with fresh type inference (avoids S unification across branches)
+    #[cfg(feature = "otlp")]
+    macro_rules! otlp_layer {
+        () => {{
+            use opentelemetry::trace::TracerProvider as _;
+            otlp_provider
+                .as_ref()
+                .map(|p| tracing_opentelemetry::layer().with_tracer(p.tracer("opensovd-native")))
+        }};
+    }
 
     {
         use tracing_subscriber::layer::SubscriberExt;
         use tracing_subscriber::util::SubscriberInitExt;
         if use_json {
             // Structured JSON logging with trace correlation (E1.2)
+            #[cfg(feature = "otlp")]
             tracing_subscriber::registry()
                 .with(filter)
                 .with(fmt::layer().json().flatten_event(true).with_target(true))
                 .with(dlt_layer)
-                .with(otlp_layer)
+                .with(otlp_layer!())
+                .init();
+            #[cfg(not(feature = "otlp"))]
+            tracing_subscriber::registry()
+                .with(filter)
+                .with(fmt::layer().json().flatten_event(true).with_target(true))
+                .with(dlt_layer)
                 .init();
         } else {
+            #[cfg(feature = "otlp")]
             tracing_subscriber::registry()
                 .with(filter)
                 .with(fmt::layer())
                 .with(dlt_layer)
-                .with(otlp_layer)
+                .with(otlp_layer!())
+                .init();
+            #[cfg(not(feature = "otlp"))]
+            tracing_subscriber::registry()
+                .with(filter)
+                .with(fmt::layer())
+                .with(dlt_layer)
                 .init();
         }
+    }
+
+    #[cfg(feature = "otlp")]
+    if config.logging.otlp_endpoint.is_some() {
+        // Log after tracing init so this actually gets emitted
+        info!("OpenTelemetry OTLP export enabled");
     }
 
     // ── Config validation (fail-fast) ─────────────────────────────────
@@ -372,13 +434,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let audit_log = Arc::new(AuditLog::new());
     info!("Audit log enabled (in-memory, {} max entries)", 10_000);
 
-    // ── Historical diagnostic storage (W2.2) ──────────────────────────
-    let history_store = Arc::new(native_interfaces::InMemoryStorage::new());
+    // ── Historical diagnostic storage (W2.2 + F1) ─────────────────────
+    let history_store: Arc<dyn native_interfaces::StorageBackend> =
+        match config.storage.backend.as_str() {
+            #[cfg(feature = "persist")]
+            "sled" => {
+                let store = native_core::SledStorage::open(&config.storage.sled_path)
+                    .map_err(|e| format!("Failed to open sled at '{}': {e}", config.storage.sled_path))?;
+                info!(path = %config.storage.sled_path, "Persistent storage: sled");
+                Arc::new(store)
+            }
+            #[cfg(not(feature = "persist"))]
+            "sled" => {
+                return Err("storage.backend = \"sled\" requires the `persist` feature flag".into());
+            }
+            _ => {
+                info!("Storage backend: in-memory (volatile)");
+                Arc::new(native_interfaces::InMemoryStorage::new())
+            }
+        };
     let history = Arc::new(HistoryService::new(
         history_store,
         HistoryConfig::default(),
     ));
-    info!("History service enabled (in-memory, 90-day retention)");
 
     // E2.4 + W2.2: Background compaction task — prunes expired history entries
     {

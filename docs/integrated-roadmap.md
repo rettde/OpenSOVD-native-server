@@ -291,16 +291,16 @@ All Waves 1–4 are fully implemented. The items below are **enhancement opportu
 
 | ID | Area | Description | Priority |
 |----|------|-------------|----------|
-| F1 | **Persistent storage** | Replace `InMemoryStorage` with `SledStorage` (embedded) or PostgreSQL backend for fault/audit/history data that survives restarts. `StorageBackend` trait is ready. | High |
-| F2 | **OTLP tracing** | Enable the `otlp` feature flag and connect to a Jaeger/Tempo/Grafana backend. OTLP layer is wired in `main.rs`, needs only an endpoint URL. | Medium |
+| F1 | **Persistent storage** | ✅ `SledStorage` behind `persist` feature; `StorageConfig` selects memory/sled at startup; 13 tests. | High |
+| F2 | **OTLP tracing** | ✅ `otlp` feature compiles with `opentelemetry_sdk` 0.27; 11 handlers instrumented; Jaeger Compose stack in `deploy/`. | Medium |
 | F3 | **WebSocket bridge** | Implement `WsBridgeTransport` for real cloud↔vehicle tunneling. `BridgeTransport` trait and REST session management are in place; `InMemoryBridgeTransport` is the current stub. | Medium |
 | F4 | **Vault integration** | Add a `VaultSecretProvider` (HashiCorp Vault, AWS Secrets Manager, Azure Key Vault). `SecretProvider` trait is ready; currently using `EnvSecretProvider`. | Medium |
 | F5 | **E2E test suite** | Testcontainers-based integration tests with CDA + demo-ecu for full gateway round-trip scenarios (DoIP → CDA → SOVD). | Medium |
-| F6 | **SBOM / supply chain** | Add `cargo-cyclonedx` or `syft` to CI for UNECE R156 / ISO 24089 software supply chain compliance. | Low |
+| F6 | **SBOM / supply chain** | ✅ `cargo-cyclonedx` CI job generates CycloneDX JSON SBOM artifact. | Low |
 | F7 | **Prometheus scrape target** | Expose `/metrics` for Prometheus pull-based monitoring. RED metrics are already recorded; a scrape endpoint would make them accessible without push. | Low |
 | F8 | **SOME/IP real transport** | Test and validate `native-comm-someip` FFI bindings against a real COVESA/vsomeip setup. Currently stub-mode in CI (no `libvsomeip3`). | Low |
 
 > Detailed implementation plan with phases, dependencies, code snippets, and acceptance criteria:
 > [future-work-implementation-plan.md](future-work-implementation-plan.md)
 
-**Current state: 398 tests, clippy clean, ISO 17978-3 conformant (51/51 mandatory requirements), all 4 waves complete.**
+**Current state: 411 tests (398 + 13 sled), clippy clean, ISO 17978-3 conformant (51/51 mandatory requirements), all 4 waves + Phase 1 Future Work complete.**
