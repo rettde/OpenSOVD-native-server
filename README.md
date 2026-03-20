@@ -268,6 +268,21 @@ COVESA VSS semantic data catalog, NDJSON batch export (snapshot + faults), fault
 > For the full research, gap analysis, and prioritization see
 > [docs/integrated-roadmap.md](docs/integrated-roadmap.md).
 
+### Future Work
+
+All waves are complete. These are **optional enhancements** for production deployments:
+
+- **F1 — Persistent storage** — `SledStorage` or PostgreSQL via the `StorageBackend` trait (currently in-memory)
+- **F2 — OTLP tracing** — Enable the `otlp` feature flag, connect to Jaeger/Tempo (layer already wired)
+- **F3 — WebSocket bridge** — Real `WsBridgeTransport` for cloud↔vehicle tunneling (`BridgeTransport` trait ready)
+- **F4 — Vault integration** — `VaultSecretProvider` for HashiCorp Vault / AWS Secrets Manager (`SecretProvider` trait ready)
+- **F5 — E2E tests** — Testcontainers with CDA + demo-ecu for full gateway round-trip
+- **F6 — SBOM** — `cargo-cyclonedx` or `syft` in CI for UNECE R156 / ISO 24089
+- **F7 — Prometheus scrape** — `/metrics` endpoint (RED metrics already recorded internally)
+- **F8 — SOME/IP real transport** — Validate `native-comm-someip` FFI against real COVESA/vsomeip
+
+> Details: [docs/integrated-roadmap.md § Future Work](docs/integrated-roadmap.md)
+
 ## License
 
 [Apache-2.0](LICENSE)
