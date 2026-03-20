@@ -17,12 +17,6 @@ FROM rust:1-bookworm AS builder
 WORKDIR /build
 COPY . .
 
-# Create OEM stub for open-source builds (proprietary profiles are .gitignored)
-RUN if [ ! -f native-sovd/src/oem_mbds.rs ]; then \
-      echo '// Docker build stub — proprietary OEM profile not present' \
-        > native-sovd/src/oem_mbds.rs; \
-    fi
-
 # Ensure a config file exists (empty defaults are fine — all values have serde defaults)
 RUN test -f opensovd-native-server.toml || echo '# Default config — override via env or volume mount' > opensovd-native-server.toml
 
