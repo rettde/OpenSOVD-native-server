@@ -190,12 +190,13 @@ Wave 1  ┌─ A1.1 Graceful shutdown ✅  W1.1 AuthZ ✅            E1.1 Audit 
         │  A1.5 AppState sub-groups ✅
         └  A1.6 Error catalog ✅
         
-Wave 2  ┌─ A2.1 StorageBackend ✅     W2.1 KPI/system-info ✅  E2.1 TLS hot-reload ⏳
-        │  A2.2 Backend trait diet ✅  W2.2 Historical storage⏳ E2.2 Deployment pkg ⏳
-        │  A2.3 Secrets abstraction ✅ W2.3 Fault debouncing ✅  E2.3 Backup/restore ⏳
-        │  A2.4 OTLP export ✅        W2.4 Mode/session model✅ E2.4 Feature flags ⏳
-        └  A2.5 Per-client rate ✅                              T2.1 Load tests ⏳
-                                                                T2.2 Fault injection ⏳
+Wave 2  ┌─ A2.1 StorageBackend ✅     W2.1 KPI/system-info ✅  E2.1 TLS hot-reload ✅
+        │  A2.2 Backend trait diet ✅  W2.2 Historical storage✅ E2.2 Deployment pkg ✅
+        │  A2.3 Secrets abstraction ✅ W2.3 Fault debouncing ✅  E2.3 Backup/restore ✅
+        │  A2.4 OTLP export ✅        W2.4 Mode/session model✅ E2.4 Feature flags ✅
+        └  A2.5 Per-client rate ✅                              T1.1 Contract test ✅
+                                                                T2.1 Load tests ✅
+                                                                T2.2 Fault injection ✅
 
 Wave 3  ┌─ A3.1 ADR: Bridge topo ✅  W3.1 Cloud bridge ✅      E3.1 Client SDKs ✅
         │  A3.2 ADR: Tenant isol ✅   W3.2 Multi-tenant ✅      E3.2 Compliance export✅
@@ -276,20 +277,19 @@ These are the critical moments where a refactoring decision **must** be made to 
 | E4.2 Export access control | ✅ Complete | — |
 | E4.3 Reproducibility metadata | ✅ Complete | — |
 | T4.1 Schema stability regression | ✅ Complete | 4 tests |
-| **Total** | **312 tests, clippy clean** | |
+| T1.1 OpenAPI contract test | ✅ Complete | 20 tests |
+| W2.2 Historical diagnostic storage | ✅ Complete | 13 tests |
+| E2.1 TLS certificate hot-reload | ✅ Complete | 7 tests |
+| E2.2 Deployment packaging | ✅ Complete | — |
+| E2.3 Backup/restore | ✅ Complete | 2 tests |
+| E2.4 Feature flags (runtime toggle) | ✅ Complete | 7 tests |
+| T2.1 Load/stress test harness (k6 + criterion) | ✅ Complete | — |
+| T2.2 Fault injection tests | ✅ Complete | 17 tests |
+| **Total** | **398 tests, clippy clean** | |
 
 ### Open / Future Work ⏳
 
-| Item | Wave | Description |
-|------|------|-------------|
-| W2.2 | 2 | Historical diagnostic storage — time-range queries on faults, KPIs, audit |
-| E2.1 | 2 | TLS certificate hot-reload — watch cert files, reload without restart |
-| E2.2 | 2 | Deployment packaging — distroless container, systemd unit, Helm chart |
-| E2.3 | 2 | Backup/restore for diagnostic state |
-| E2.4 | 2 | Feature flags / runtime toggle |
-| T1.1 | 1 | OpenAPI contract test in CI |
-| T2.1 | 2 | Load/stress test harness (criterion + k6) |
-| T2.2 | 2 | Fault injection tests (backend failure simulation) |
+No open roadmap items — all Waves 1–4 are fully implemented.
 
-**All core SOVD functionality (Waves 1–4) and Wave 3–4 enterprise hardening complete.  
-Wave 2 enterprise hardening (E2.1–E2.4) and test infrastructure (T1.1, T2.1–T2.2) remain open.**
+**All core SOVD functionality (Waves 1–4), enterprise hardening (E1–E4), and test infrastructure (T1–T2) are complete.  
+398 tests, clippy clean, ISO 17978-3 conformant.**

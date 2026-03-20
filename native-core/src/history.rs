@@ -103,7 +103,7 @@ impl HistoryService {
             .filter(|(key, _)| {
                 if let Some((cid, ts, _id)) = Self::parse_fault_key(key) {
                     let ts_match = ts >= from_ms && ts <= to_ms;
-                    let cid_match = component_id.map_or(true, |c| c == cid);
+                    let cid_match = component_id.is_none_or(|c| c == cid);
                     ts_match && cid_match
                 } else {
                     false
@@ -120,8 +120,8 @@ impl HistoryService {
     pub fn query_audit(&self, from_ms: i64, to_ms: i64, limit: usize) -> Vec<SovdAuditEntry> {
         let entries = self.store.list(Some(AUDIT_NS));
         let iter = entries.into_iter().filter(|(key, _)| {
-            if let Some((_ts_parsed, _seq)) = Self::parse_audit_key(key) {
-                _ts_parsed >= from_ms && _ts_parsed <= to_ms
+            if let Some((ts_parsed, _seq)) = Self::parse_audit_key(key) {
+                ts_parsed >= from_ms && ts_parsed <= to_ms
             } else {
                 false
             }
@@ -201,15 +201,12 @@ impl HistoryService {
     //   audit: "hist:audit:{ts_padded_20}:{seq_padded_20}"
 
     fn fault_key(component_id: &str, timestamp_ms: i64, fault_id: &str) -> Vec<u8> {
-        format!(
-            "hist:fault:{}:{:020}:{}",
-            component_id, timestamp_ms, fault_id
-        )
+        format!("hist:fault:{component_id}:{timestamp_ms:020}:{fault_id}")
         .into_bytes()
     }
 
     fn audit_key(timestamp_ms: i64, seq: u64) -> Vec<u8> {
-        format!("hist:audit:{:020}:{:020}", timestamp_ms, seq).into_bytes()
+        format!("hist:audit:{timestamp_ms:020}:{seq:020}").into_bytes()
     }
 
     fn parse_fault_key(key: &[u8]) -> Option<(String, i64, String)> {

@@ -132,7 +132,7 @@ impl FeatureFlags {
     pub fn is_enabled(&self, name: &str) -> bool {
         self.registry
             .get(name)
-            .map_or(true, |f| f.enabled.load(Ordering::Relaxed))
+            .is_none_or(|f| f.enabled.load(Ordering::Relaxed))
     }
 
     /// Set a feature flag at runtime.
@@ -186,7 +186,7 @@ impl FeatureFlags {
     /// List all known flag names.
     pub fn names(&self) -> Vec<&'static str> {
         let mut names: Vec<_> = self.registry.keys().copied().collect();
-        names.sort();
+        names.sort_unstable();
         names
     }
 }

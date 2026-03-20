@@ -421,6 +421,49 @@ fn cmp_json_values(
     }
 }
 
+// ── Feature-Flag-Gated Helpers (E2.4) ────────────────────────────────────
+//
+// Enterprise pattern: every audit_log.record() and history.record_*() call
+// goes through these helpers, which check the runtime feature flags first.
+// This enables operators to disable audit/history at runtime without restart.
+
+/// Record an audit entry, gated by the `audit` feature flag.
+/// Also forwards the entry to HistoryService if the `history` flag is enabled.
+#[allow(clippy::too_many_arguments)]
+fn guarded_audit(
+    state: &AppState,
+    caller: &str,
+    action: SovdAuditAction,
+    target: &str,
+    resource: &str,
+    method: &str,
+    outcome: &str,
+    detail: Option<&str>,
+    trace_id: Option<&str>,
+) {
+    use native_interfaces::feature_flags::flags;
+    if state.runtime.feature_flags.is_enabled(flags::AUDIT) {
+        state.security.audit_log.record(
+            caller, action, target, resource, method, outcome, detail, trace_id,
+        );
+        // W2.2 + E2.4: forward audit entry to history if enabled
+        if state.runtime.feature_flags.is_enabled(flags::HISTORY) {
+            let entries = state.security.audit_log.recent(1);
+            if let Some(entry) = entries.first() {
+                state.diag.history.record_audit(entry);
+            }
+        }
+    }
+}
+
+/// Record a fault snapshot to history, gated by the `history` feature flag.
+fn guarded_history_fault(state: &AppState, fault: &native_interfaces::sovd::SovdFault) {
+    use native_interfaces::feature_flags::flags;
+    if state.runtime.feature_flags.is_enabled(flags::HISTORY) {
+        state.diag.history.record_fault(fault);
+    }
+}
+
 /// Build the full axum router with all SOVD endpoints
 #[allow(clippy::too_many_lines)]
 pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
@@ -990,11 +1033,12 @@ async fn connect_component(
     } else {
         &caller
     };
-    state.security.audit_log.record(
+    guarded_audit(
+        &state,
         caller_label,
         SovdAuditAction::Connect,
         &tenant.scoped_key(&format!("component/{component_id}")),
-        "connect",
+        "session",
         "POST",
         "success",
         None,
@@ -1012,11 +1056,12 @@ async fn disconnect_component(
         .disconnect(&component_id)
         .await
         .map_err(|ref e| diag_error(e))?;
-    state.security.audit_log.record(
+    guarded_audit(
+        &state,
         "anonymous",
         SovdAuditAction::Disconnect,
         &format!("component/{component_id}"),
-        "disconnect",
+        "session",
         "POST",
         "success",
         None,
@@ -1036,9 +1081,9 @@ async fn list_faults(
         .diag
         .fault_manager
         .get_faults_for_component(&component_id);
-    // W2.2: Record fault snapshot to history
+    // W2.2 + E2.4: Record fault snapshot to history (flag-gated)
     for fault in &faults {
-        state.diag.history.record_fault(fault);
+        guarded_history_fault(&state, fault);
     }
     Ok(Json(
         paginate(faults, &params)?.with_context("$metadata#faults"),
@@ -1051,10 +1096,10 @@ async fn clear_faults(
     Path(component_id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<SovdErrorEnvelope>)> {
     require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
-    // W2.2: Snapshot faults to history before clearing
+    // W2.2 + E2.4: Snapshot faults to history before clearing (flag-gated)
     let faults_before = state.diag.fault_manager.get_faults_for_component(&component_id);
     for fault in &faults_before {
-        state.diag.history.record_fault(fault);
+        guarded_history_fault(&state, fault);
     }
     // Clear via backend (forwards to CDA or local UDS)
     let _ = state.backend.clear_faults(&component_id).await;
@@ -1062,7 +1107,8 @@ async fn clear_faults(
         .diag
         .fault_manager
         .clear_faults_for_component(&component_id);
-    state.security.audit_log.record(
+    guarded_audit(
+        &state,
         &caller.0,
         SovdAuditAction::ClearFaults,
         &format!("component/{component_id}"),
@@ -1150,7 +1196,8 @@ async fn write_data(
         .write_data(&component_id, &data_id, &bytes)
         .await
         .map_err(|ref e| diag_error(e))?;
-    state.security.audit_log.record(
+    guarded_audit(
+        &state,
         &caller.0,
         SovdAuditAction::WriteData,
         &format!("component/{component_id}"),
@@ -1284,7 +1331,8 @@ async fn execute_operation(
             .map_err(|e| bad_request(&format!("Location header error: {e}")))?,
     );
 
-    state.security.audit_log.record(
+    guarded_audit(
+        &state,
         &caller.0,
         SovdAuditAction::ExecuteOperation,
         &format!("component/{component_id}"),
@@ -1507,7 +1555,8 @@ async fn start_flash(
         .flash(&component_id, &firmware, body.memory_address)
         .await
         .map_err(|ref e| diag_error(e))?;
-    state.security.audit_log.record(
+    guarded_audit(
+        &state,
         &caller.0,
         SovdAuditAction::FlashStart,
         &format!("component/{component_id}"),
@@ -1672,7 +1721,7 @@ async fn set_feature_flag(
     })?;
 
     if state.runtime.feature_flags.set(&flag_name, enabled) {
-        // Audit the flag change
+        // Audit the flag change (direct call — flags admin is always audited)
         state.security.audit_log.record(
             "admin",
             SovdAuditAction::WriteData,
@@ -1683,8 +1732,14 @@ async fn set_feature_flag(
             Some(&format!("enabled={enabled}")),
             None,
         );
-        let flag = state.runtime.feature_flags.get(&flag_name).unwrap();
-        Ok(Json(serde_json::json!(flag)))
+        if let Some(flag) = state.runtime.feature_flags.get(&flag_name) {
+            Ok(Json(serde_json::json!(flag)))
+        } else {
+            Err(sovd_error(
+                SovdErrorCode::NotFound,
+                &format!("Unknown feature flag: {flag_name}"),
+            ))
+        }
     } else {
         Err(sovd_error(
             SovdErrorCode::NotFound,
@@ -1709,7 +1764,8 @@ async fn create_backup(
     let json = native_core::snapshot_to_json(&snapshot)
         .map_err(|e| sovd_error(SovdErrorCode::InternalError, &e))?;
 
-    state.security.audit_log.record(
+    guarded_audit(
+        &state,
         "admin",
         SovdAuditAction::ReadData,
         "x-admin/backup",
@@ -1750,7 +1806,8 @@ async fn restore_backup(
     )
     .map_err(|e| sovd_error(SovdErrorCode::BadRequest, &e.to_string()))?;
 
-    state.security.audit_log.record(
+    guarded_audit(
+        &state,
         "admin",
         SovdAuditAction::WriteData,
         "x-admin/restore",
@@ -1936,7 +1993,8 @@ async fn component_snapshot(
     } else {
         &caller
     };
-    state.security.audit_log.record(
+    guarded_audit(
+        &state,
         caller_label,
         native_interfaces::sovd::SovdAuditAction::ReadData,
         &format!("component/{component_id}/snapshot"),
@@ -2041,6 +2099,7 @@ struct FaultExportParams {
     to: Option<i64>,
 }
 
+#[allow(clippy::too_many_lines)]
 async fn export_faults(
     State(state): State<AppState>,
     axum::extract::Query(params): axum::extract::Query<FaultExportParams>,
@@ -2052,7 +2111,8 @@ async fn export_faults(
     } else {
         &caller
     };
-    state.security.audit_log.record(
+    guarded_audit(
+        &state,
         caller_label,
         native_interfaces::sovd::SovdAuditAction::ReadData,
         "export/faults",
@@ -2146,6 +2206,8 @@ async fn export_faults(
         for component in &target_components {
             if let Ok(faults) = state.backend.read_faults(&component.id).await {
                 for fault in faults {
+                    // W2.2 + E2.4: Record live faults to history (flag-gated)
+                    guarded_history_fault(&state, &fault);
                     if !severity_filter(&fault) {
                         continue;
                     }
@@ -2406,7 +2468,8 @@ async fn acquire_lock(
         .lock_manager
         .acquire(&component_id, owner, body.expires)
         .map_err(|e| conflict(&e))?;
-    state.security.audit_log.record(
+    guarded_audit(
+        &state,
         owner,
         SovdAuditAction::AcquireLock,
         &format!("component/{component_id}"),
@@ -2448,7 +2511,8 @@ async fn release_lock(
         return Err(not_found(&format!("No lock on component '{component_id}'")));
     }
     state.diag.lock_manager.release(&component_id);
-    state.security.audit_log.record(
+    guarded_audit(
+        &state,
         &caller.0,
         SovdAuditAction::ReleaseLock,
         &format!("component/{component_id}"),
@@ -2778,7 +2842,8 @@ async fn set_mode(
         .backend
         .get_mode(&component_id)
         .map_err(|ref e| diag_error(e))?;
-    state.security.audit_log.record(
+    guarded_audit(
+        &state,
         &caller.0,
         SovdAuditAction::SetMode,
         &format!("component/{component_id}"),
@@ -2862,7 +2927,8 @@ async fn install_software_package(
         .install_software_package(&component_id, &package_id)
         .await
         .map_err(|ref e| diag_error(e))?;
-    state.security.audit_log.record(
+    guarded_audit(
+        &state,
         &caller.0,
         SovdAuditAction::InstallPackage,
         &format!("component/{component_id}"),
@@ -2912,7 +2978,8 @@ async fn activate_software_package(
         .runtime
         .package_store
         .insert(format!("{component_id}/{package_id}"), pkg.clone());
-    state.security.audit_log.record(
+    guarded_audit(
+        &state,
         &caller.0,
         SovdAuditAction::InstallPackage,
         &format!("component/{component_id}"),
@@ -2940,7 +3007,8 @@ async fn rollback_software_package(
         .runtime
         .package_store
         .insert(format!("{component_id}/{package_id}"), pkg.clone());
-    state.security.audit_log.record(
+    guarded_audit(
+        &state,
         &caller.0,
         SovdAuditAction::InstallPackage,
         &format!("component/{component_id}"),
@@ -3118,7 +3186,8 @@ async fn write_config(
         .write_config(&component_id, &body.name, &data)
         .await
         .map_err(|ref e| diag_error(e))?;
-    state.security.audit_log.record(
+    guarded_audit(
+        &state,
         &caller.0,
         SovdAuditAction::WriteConfig,
         &format!("component/{component_id}"),
@@ -6230,5 +6299,159 @@ mod mock_backend_tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    // ── Feature-flag-gated behavior tests (E2.4) ─────────────────────────
+
+    #[tokio::test]
+    async fn feature_flags_list_returns_default_flags() {
+        let app = mock_router();
+        let resp = app
+            .oneshot(
+                Request::get("/x-admin/features")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let flags = json["value"].as_array().unwrap();
+        // Should have at least the core flags: audit, history, rate_limit, bridge
+        assert!(flags.len() >= 4, "Expected at least 4 default flags, got {}", flags.len());
+    }
+
+    #[tokio::test]
+    async fn feature_flag_disable_audit_suppresses_recording() {
+        let state = mock_state();
+        // Disable audit via feature flag
+        state.runtime.feature_flags.set("audit", false);
+        let app = build_router(state.clone(), AuthConfig::default());
+
+        // Trigger a fault clear (which normally records audit)
+        let resp = app
+            .oneshot(
+                Request::delete("/sovd/v1/components/hpc/faults")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+        // Audit log should be empty since flag was disabled
+        let entries = state.security.audit_log.recent(10);
+        assert!(
+            entries.is_empty(),
+            "Expected no audit entries when audit flag is disabled, got {}",
+            entries.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn feature_flag_disable_history_suppresses_recording() {
+        let state = mock_state();
+        // Disable history via feature flag
+        state.runtime.feature_flags.set("history", false);
+        let app = build_router(state.clone(), AuthConfig::default());
+
+        // Trigger a fault list (which normally records to history)
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/components/hpc/faults")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // History should be empty since flag was disabled
+        assert_eq!(
+            state.diag.history.fault_count(),
+            0,
+            "Expected no history entries when history flag is disabled"
+        );
+    }
+
+    #[tokio::test]
+    async fn feature_flag_set_toggle_via_admin_api() {
+        let app = mock_router();
+
+        // Disable audit flag
+        let resp = app
+            .oneshot(
+                Request::put("/x-admin/features/audit")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"enabled": false}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["enabled"], false);
+    }
+
+    #[tokio::test]
+    async fn feature_flag_unknown_flag_returns_404() {
+        let app = mock_router();
+        let resp = app
+            .oneshot(
+                Request::put("/x-admin/features/nonexistent")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"enabled": true}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn backup_returns_json_snapshot() {
+        let app = mock_router();
+        let resp = app
+            .oneshot(
+                Request::get("/x-admin/backup")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let ct = resp.headers().get("content-type").unwrap().to_str().unwrap();
+        assert!(ct.contains("application/json"));
+        let cd = resp.headers().get("content-disposition").unwrap().to_str().unwrap();
+        assert!(cd.contains("opensovd-backup-"));
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["version"], 1);
+        assert!(json.get("created_at").is_some());
+        assert!(json.get("faults").is_some());
+        assert!(json.get("audit_entries").is_some());
+    }
+
+    #[tokio::test]
+    async fn restore_invalid_json_returns_400() {
+        let app = mock_router();
+        let resp = app
+            .oneshot(
+                Request::post("/x-admin/restore")
+                    .header("content-type", "application/json")
+                    .body(Body::from("not-valid-json"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 }

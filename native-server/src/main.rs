@@ -380,6 +380,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     info!("History service enabled (in-memory, 90-day retention)");
 
+    // E2.4 + W2.2: Background compaction task — prunes expired history entries
+    {
+        let history_ref = history.clone();
+        tokio::spawn(async move {
+            let interval = std::time::Duration::from_secs(6 * 3600); // every 6 hours
+            loop {
+                tokio::time::sleep(interval).await;
+                let removed = history_ref.compact_by_retention();
+                if removed > 0 {
+                    tracing::info!(removed, "History compaction completed");
+                }
+            }
+        });
+        info!("History compaction task scheduled (every 6h)");
+    }
+
     let state = AppState {
         backend: router.clone(),
         extended_backend: router.clone(),

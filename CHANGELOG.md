@@ -7,6 +7,42 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.10.1] — 2026-03-20
+
+### Enterprise Hardening Audit — Feature-Flag Integration & Gap Fixes
+
+#### Feature Flags Wired Into All Handlers (E2.4)
+- **`guarded_audit()` helper** — all 15+ audit recording call sites now check the `audit` feature flag before writing; flag-admin endpoint always audits (chicken-and-egg safe)
+- **`guarded_history_fault()` helper** — all fault-to-history recording gated by `history` feature flag
+- **Audit → History forwarding** — every audit entry is automatically forwarded to `HistoryService` when both `audit` and `history` flags are enabled
+
+#### Historical Diagnostic Storage Completeness (W2.2)
+- **Audit entries in HistoryService** — `record_audit()` now called on every audit write (was missing)
+- **Live fault export → history** — `export_faults` live path records faults to history (was missing)
+- **Background compaction task** — `tokio::spawn` interval task runs every 6 hours, prunes entries older than `retention_days` (was manual-only)
+
+#### Backup/Restore Integration Tests (E2.3)
+- `backup_returns_json_snapshot` — validates snapshot schema (version, created_at, faults, audit_entries)
+- `restore_invalid_json_returns_400` — corrupted input handling
+
+#### Feature Flag Integration Tests (E2.4)
+- `feature_flags_list_returns_default_flags` — verifies 4+ default flags
+- `feature_flag_disable_audit_suppresses_recording` — proves audit suppression
+- `feature_flag_disable_history_suppresses_recording` — proves history suppression
+- `feature_flag_set_toggle_via_admin_api` — admin API toggle round-trip
+- `feature_flag_unknown_flag_returns_404` — error handling
+
+#### Code Quality
+- Clippy warnings fixed: `map_or` → `is_none_or`, `sort` → `sort_unstable`, underscore-prefixed bindings, inlined format args
+- All `unwrap()` calls on fallible paths replaced with proper error handling
+
+### Stats
+- **398 tests** (up from 391), all passing
+- Clippy clean across entire workspace
+- All roadmap items (Waves 1–4) now fully complete — no open items
+
+---
+
 ## [0.10.0] — 2026-03-20
 
 ### Wave 4 — AI-Ready Diagnostic Data (Semantic Layer Enablement)
