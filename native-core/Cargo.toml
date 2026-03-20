@@ -45,6 +45,11 @@ sled = { workspace = true, optional = true }
 [dev-dependencies]
 axum = { workspace = true, features = ["tokio", "json", "http1"] }
 tempfile = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "diag_bench"
+harness = false
 
 [features]
 default = []
