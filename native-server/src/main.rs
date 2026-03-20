@@ -9,6 +9,8 @@
 //                               └── SovdHttpBackend → external CDA / SOVD backends
 // ─────────────────────────────────────────────────────────────────────────────
 
+mod tls_reload;
+
 use std::sync::Arc;
 
 use figment::{
@@ -451,6 +453,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .await
                 .map_err(|e| format!("TLS config error: {e}"))?
         };
+
+        // E2.1: TLS certificate hot-reload — poll cert/key files for changes
+        let _tls_reload_handle = tls_reload::spawn_tls_reloader(
+            tls_config.clone(),
+            tls_reload::reload_config_from_server(
+                cert_path,
+                key_path,
+                config.server.client_ca_path.as_deref(),
+            ),
+        );
+        info!("TLS certificate hot-reload enabled (30s poll interval)");
 
         // Graceful shutdown handle for axum_server (TLS path)
         let handle = axum_server::Handle::new();

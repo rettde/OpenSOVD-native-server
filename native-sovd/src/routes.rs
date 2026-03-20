@@ -688,6 +688,9 @@ pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
                 async move { handle.render() }
             }),
         )
+        // Backup/restore admin endpoints (E2.3)
+        .route("/x-admin/backup", get(create_backup))
+        .route("/x-admin/restore", axum::routing::post(restore_backup))
         // Feature flags admin endpoints (E2.4, public for operational visibility)
         .route("/x-admin/features", get(list_feature_flags))
         .route(
@@ -1688,6 +1691,86 @@ async fn set_feature_flag(
             &format!("Unknown feature flag: {flag_name}"),
         ))
     }
+}
+
+// ── Backup / Restore (E2.3) ──────────────────────────────────────────────
+
+/// GET /x-admin/backup — create a snapshot of current diagnostic state.
+async fn create_backup(
+    State(state): State<AppState>,
+) -> Result<axum::response::Response, (StatusCode, Json<SovdErrorEnvelope>)> {
+    let snapshot = native_core::create_snapshot(
+        &state.diag.fault_manager,
+        &state.security.audit_log,
+        state.diag.history.fault_count(),
+        state.diag.history.audit_count(),
+    );
+
+    let json = native_core::snapshot_to_json(&snapshot)
+        .map_err(|e| sovd_error(SovdErrorCode::InternalError, &e))?;
+
+    state.security.audit_log.record(
+        "admin",
+        SovdAuditAction::ReadData,
+        "x-admin/backup",
+        "backup",
+        "GET",
+        "success",
+        Some(&format!("faults={} audit={}", snapshot.faults.len(), snapshot.audit_entries.len())),
+        None,
+    );
+
+    let resp = axum::response::Response::builder()
+        .header("content-type", "application/json")
+        .header(
+            "content-disposition",
+            format!(
+                "attachment; filename=\"opensovd-backup-{}.json\"",
+                chrono::Utc::now().format("%Y%m%dT%H%M%SZ")
+            ),
+        )
+        .body(axum::body::Body::from(json))
+        .map_err(|e| sovd_error(SovdErrorCode::InternalError, &e.to_string()))?;
+    Ok(resp)
+}
+
+/// POST /x-admin/restore — restore diagnostic state from a snapshot.
+async fn restore_backup(
+    State(state): State<AppState>,
+    body: axum::body::Bytes,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    let snapshot = native_core::snapshot_from_json(&body).map_err(|e| {
+        sovd_error(SovdErrorCode::BadRequest, &e.to_string())
+    })?;
+
+    let result = native_core::restore_snapshot(
+        &snapshot,
+        &state.diag.fault_manager,
+        &state.security.audit_log,
+    )
+    .map_err(|e| sovd_error(SovdErrorCode::BadRequest, &e.to_string()))?;
+
+    state.security.audit_log.record(
+        "admin",
+        SovdAuditAction::WriteData,
+        "x-admin/restore",
+        "backup",
+        "POST",
+        "success",
+        Some(&format!(
+            "faults={} audit={}",
+            result.faults_restored, result.audit_restored
+        )),
+        None,
+    );
+
+    Ok(Json(serde_json::json!({
+        "status": "restored",
+        "faultsRestored": result.faults_restored,
+        "auditRestored": result.audit_restored,
+        "snapshotVersion": snapshot.version,
+        "snapshotCreatedAt": snapshot.created_at,
+    })))
 }
 
 // ── Audit Trail (Wave 1) ─────────────────────────────────────────────────

@@ -27,6 +27,7 @@
 )]
 
 pub mod audit_log;
+pub mod backup;
 pub mod diag_log;
 pub mod fault_bridge;
 pub mod fault_governor;
@@ -38,6 +39,7 @@ pub mod router;
 
 // ── Re-exports ──────────────────────────────────────────────────────────────
 pub use audit_log::{AuditLog, AuditLogConfig};
+pub use backup::{create_snapshot, restore_snapshot, snapshot_from_json, snapshot_to_json, DiagnosticSnapshot};
 pub use diag_log::DiagLog;
 pub use fault_bridge::{FaultBridge, FaultLifecycleStage, FaultRecord, FaultSeverity, FaultSink};
 pub use fault_governor::{FaultGovernor, FaultGovernorConfig};
