@@ -45,7 +45,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.10.0] — 2026-03-20
 
-### Wave 4 — AI-Ready Diagnostic Data (Semantic Layer Enablement)
+### Wave 4 — Data Catalog & Batch Export
 
 ### Architecture Decisions
 - **A4.1 Ontology reference standard** — ADR: COVESA VSS as primary semantic reference, `x-vendor.*` prefix for OEM extensions
@@ -55,7 +55,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Features
 - **W4.1 Semantic metadata on data catalog** — `SovdDataCatalogEntry` extended with `normalRange`, `semanticRef` (VSS path), `samplingHint`, `classificationTags`
 - **W4.2 Batch diagnostic snapshot** — `GET /components/{id}/snapshot` returns all signal values + metadata as NDJSON; `GET /export/faults` for fault export with severity filtering
-- **W4.3 Fault ontology enrichment** — `SovdFault` extended with `affectedSubsystem`, `correlatedSignals[]`, `classificationTags[]` for ML feature engineering
+- **W4.3 Fault ontology enrichment** — `SovdFault` extended with `affectedSubsystem`, `correlatedSignals[]`, `classificationTags[]` for structured fault correlation
 - **W4.4 Schema introspection** — `GET /schema/data-catalog` returns full semantic schema across all components (COVESA VSS ontology reference)
 - **W4.5 SSE data-change stream** — `GET /components/{id}/data/subscribe` provides real-time data-change + fault-change + keepalive events via Server-Sent Events
 
@@ -267,7 +267,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `oem_sample.rs`: step-by-step guide (Copy → Rename → Implement → Register) with
   examples for VIN-binding, scope-ceiling, region-restriction, workshop-ID,
   entity-ID format, CDF extensions, proximity proof, and more
-- Integrated roadmap with Wave 4 (AI-Ready Diagnostic Data) based on semantic layer vision
+- Integrated roadmap with Wave 4 (Data Catalog & Batch Export) planning
 
 ### Testing
 - **230 tests** across the workspace (all passing, clippy clean):

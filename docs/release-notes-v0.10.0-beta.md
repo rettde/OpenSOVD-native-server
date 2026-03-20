@@ -1,15 +1,15 @@
 # OpenSOVD-native-server v0.10.0-beta
 
-## Wave 4 — AI-Ready Diagnostic Data (Semantic Layer Enablement)
+## Wave 4 — Data Catalog & Batch Export
 
-This release implements the full Wave 4 feature set, enabling SOVD as a structured,
-machine-readable data source for AI-assisted vehicle diagnostics.
+This release adds machine-readable metadata (COVESA VSS), NDJSON batch export,
+schema introspection, and SSE data-change streams.
 
 ### Architecture Decisions
 
 - **A4.1 Ontology reference standard** — COVESA VSS as primary semantic reference; `x-vendor.*` prefix for OEM extensions ([ADR](docs/adr/A4.1-ontology-reference-standard.md))
 - **A4.2 `DataCatalogProvider` trait** — Pluggable semantic metadata provider with default `StaticDataCatalogProvider`
-- **A4.3 Batch export format** — NDJSON (newline-delimited JSON) for ML pipeline compatibility ([ADR](docs/adr/A4.3-batch-export-format.md))
+- **A4.3 Batch export format** — NDJSON (newline-delimited JSON) for streaming export pipelines ([ADR](docs/adr/A4.3-batch-export-format.md))
 
 ### New Endpoints
 

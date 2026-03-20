@@ -40,7 +40,7 @@ Format follows [Michael Nygard's ADR template](https://cognitect.com/blog/2011/1
 | [A3.4](A3.4-bridge-transport-trait.md) | BridgeTransport Trait | ✅ Accepted | `native-interfaces/src/bridge.rs`, `native-sovd/src/bridge.rs` |
 | [A3.5](A3.5-api-versioning.md) | API Versioning Contract | ✅ Accepted | `native-sovd/src/routes.rs` |
 
-### Wave 4 — AI-Ready Diagnostic Data
+### Wave 4 — Data Catalog & Batch Export
 
 | ID | Title | Status | Key files |
 |----|-------|--------|-----------|

@@ -249,4 +249,4 @@ The public landscape suggests that the next meaningful evolution of a SOVD serve
 - more complete **software update workflows**, and
 - better **enterprise/lifecycle integration**.
 
-`OpenSOVD-native-server` already covers much of the basic diagnostic API. The most promising next step is to evolve it from a strong standards-compliant gateway into a **policy-driven, enterprise-ready diagnostic platform for SDV/HPC environments**.
+`OpenSOVD-native-server` already covers the core diagnostic API. The next steps focus on persistent storage, real transport bindings, and production deployment tooling.

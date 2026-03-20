@@ -81,13 +81,13 @@ SOVD Clients (HTTP/JSON)
 - **SOME/IP** — [COVESA/vsomeip](https://github.com/COVESA/vsomeip) FFI bindings (optional)
 - **Health Monitoring** — CPU, memory, system metrics via `/sovd/v1/health`
 - **Prometheus Metrics** — `sovd_http_requests_total`, `sovd_http_request_duration_seconds`
-- **OEM Plugin Architecture** — `OemProfile` trait with AuthPolicy, AuthzPolicy, EntityIdPolicy, CdfPolicy sub-traits; compile-time auto-detection of vendor profiles
+- **OEM Plugin Architecture** — `OemProfile` trait with compile-time auto-detection of vendor profiles
 - **Feature Flags** — Lock-free atomic runtime toggles for audit, history, rate limiting, bridge; admin REST API at `/x-admin/features`
-- **Historical Storage** — Time-range queries on faults and audit entries with pluggable `StorageBackend` trait and background compaction
+- **Historical Storage** — Time-range queries on faults and audit entries with background compaction
 - **Backup/Restore** — Full diagnostic state snapshot (faults + audit) via admin API with tamper-evident audit trail
 - **TLS Hot-Reload** — Certificate file polling (30s) with graceful reload; supports TLS + mTLS
 - **Multi-Tenant** — JWT `tenant_id` claim, namespace isolation, per-tenant policy
-- **Cloud Bridge** — Feature-gated vehicle↔cloud brokered session management
+- **Cloud Bridge** — Vehicle↔cloud brokered session management
 - **Data Catalog** — COVESA VSS ontology, semantic metadata, NDJSON batch export, schema introspection
 - **398 tests**, Clippy pedantic clean, `#![forbid(unsafe_code)]` (except vSomeIP FFI)
 
@@ -237,17 +237,14 @@ Environment variable overrides: `SOVD__SERVER__PORT=9090`, `SOVD__LOGGING__LEVEL
 
 ## Feature Roadmap
 
-The SOVD standard and the broader ecosystem (Eclipse OpenSOVD, vendor implementations, ASAM direction)
-point toward a clear evolution: from a standards-compliant REST gateway toward a **policy-driven,
-enterprise-ready diagnostic platform** for software-defined vehicles and HPC architectures.
-This roadmap captures the planned expansion in four waves.
+The server was built in four implementation waves. All are complete.
 
 | Wave | Theme | Status |
 |------|-------|--------|
 | **Wave 1** | Security & entity model | ✅ Complete |
 | **Wave 2** | HPC diagnostics & history | ✅ Complete |
 | **Wave 3** | Enterprise & fleet | ✅ Complete |
-| **Wave 4** | AI-ready diagnostic data | ✅ Complete |
+| **Wave 4** | Data catalog & batch export | ✅ Complete |
 
 ### Wave 1 — Security & Entity Model ✅
 
@@ -261,7 +258,7 @@ KPI/system-info resources, historical diagnostic storage with time-range queries
 
 Cloud bridge mode (BridgeTransport trait), multi-tenant isolation (JWT tenant_id + namespace), variant-aware discovery, zero-trust hardening, canary deployment routing, signed audit export, compliance evidence endpoint.
 
-### Wave 4 — AI-Ready Diagnostic Data ✅
+### Wave 4 — Data Catalog & Batch Export ✅
 
 COVESA VSS semantic data catalog, NDJSON batch export (snapshot + faults), fault ontology enrichment (affectedSubsystem, correlatedSignals, classificationTags), schema introspection, SSE data-change streams, data contract versioning, reproducibility metadata.
 

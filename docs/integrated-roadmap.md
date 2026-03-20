@@ -135,20 +135,18 @@
 
 ---
 
-## Wave 4 — AI-Ready Diagnostic Data (Semantic Layer Enablement)
+## Wave 4 — Data Catalog & Batch Export
 
-> **Context:** Chen, Mei-Yen drives SOVD as a structured data source for AI-assisted
-> vehicle diagnostics. Her semantic layer / ML pipeline sits *on top of* the SOVD API.
-> Wave 4 ensures the server exposes data with enough **machine-readable metadata** that
-> downstream AI consumers don't need manual data-wrangling or reverse-engineering of
-> diagnostic formats. The SOVD server does *not* own the ontology or ML models — it
-> provides the **annotated, exportable, reproducible data contracts** they depend on.
+> **Context:** Wave 4 adds machine-readable metadata and bulk export capabilities.
+> The server exposes COVESA VSS-annotated data catalogs, NDJSON batch exports, and
+> schema introspection so that external tooling (analytics, fleet monitoring, test
+> automation) can consume diagnostic data without reverse-engineering signal formats.
 
 ### Wave 4 Arch Gate
 
 | ID | Type | Item | Rationale | Effort |
 |----|------|------|-----------|--------|
-| A4.1 | 🏗️ | **ADR: Ontology reference standard** | Decision: (a) COVESA VSS paths as primary reference, (b) IFEX as superset, (c) vendor-defined ontology with VSS mapping. Mei-Yen references VSS + IFEX openness. The SOVD server must commit to *one* schema for `semanticRef` fields before data catalog endpoints ship. Write ADR during Wave 3. | S (doc) |
+| A4.1 | 🏗️ | **ADR: Ontology reference standard** | Decision: (a) COVESA VSS paths as primary reference, (b) IFEX as superset, (c) vendor-defined ontology with VSS mapping. The SOVD server must commit to *one* schema for `semanticRef` fields before data catalog endpoints ship. Write ADR during Wave 3. | S (doc) |
 | A4.2 | 🏗️ | **`DataCatalogProvider` trait** | Before enriching data endpoints with metadata, define a trait: `fn metadata(component_id, data_id) -> DataSemantics` returning unit, range, VSS path, data type, sampling hint. Default impl: static from CDF/ODX. Pluggable for OEM-specific ontology sources. | M |
 | A4.3 | 🏗️ | **Batch export serialization format** | Decision: (a) JSONL streaming, (b) Apache Arrow / Parquet via IPC, (c) CSV with schema header. ML pipelines need columnar or streaming formats — single-resource REST is too slow for training data. Decide before implementing W4.2. | S (doc) |
 
@@ -158,7 +156,7 @@
 |----|------|------|------------|--------|
 | W4.1 | 🔧 | **Semantic metadata on data catalog** — extend `SovdDataCatalogEntry` with `unit`, `normalRange`, `dataType`, `semanticRef` (VSS/IFEX path), `samplingHint` | A4.1, A4.2 | M |
 | W4.2 | 🔧 | **Batch diagnostic snapshot export** — `GET /components/{id}/snapshot` returns all current signal values + metadata in a single response; `GET /export/faults?from=&to=` for time-range fault export | A4.3, W2.2 | M |
-| W4.3 | 🔧 | **Fault ontology enrichment** — extend `SovdFault` with `affectedSubsystem`, `correlatedSignals[]`, `classificationTags[]` for ML feature engineering | A4.1 | M |
+| W4.3 | 🔧 | **Fault ontology enrichment** — extend `SovdFault` with `affectedSubsystem`, `correlatedSignals[]`, `classificationTags[]` for structured fault correlation | A4.1 | M |
 | W4.4 | 🔧 | **Schema introspection endpoint** — `GET /schema/data-catalog` returns the full semantic schema (all data items across all components with metadata) for pipeline bootstrapping | A4.2, W4.1 | S |
 | W4.5 | 🔧 | **SSE data-change stream** — extend existing fault SSE with data-value change events for real-time ML inference at the edge | W4.1 | M |
 
