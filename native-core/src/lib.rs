@@ -36,9 +36,9 @@ pub mod history;
 pub mod http_backend;
 pub mod lock_manager;
 pub mod router;
-pub mod syslog_sink;
 #[cfg(feature = "persist")]
 pub mod sled_storage;
+pub mod syslog_sink;
 #[cfg(feature = "vault")]
 pub mod vault_provider;
 #[cfg(feature = "ws-bridge")]
@@ -57,9 +57,9 @@ pub use history::{HistoryConfig, HistoryService};
 pub use http_backend::{SovdHttpBackend, SovdHttpBackendConfig};
 pub use lock_manager::LockManager;
 pub use router::ComponentRouter;
-pub use syslog_sink::SyslogAuditSink;
 #[cfg(feature = "persist")]
 pub use sled_storage::SledStorage;
+pub use syslog_sink::SyslogAuditSink;
 #[cfg(feature = "vault")]
 pub use vault_provider::{VaultConfig, VaultSecretProvider};
 #[cfg(feature = "ws-bridge")]

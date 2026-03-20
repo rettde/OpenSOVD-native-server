@@ -19,8 +19,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 /// Unique identifier for a storage snapshot.
 pub type SnapshotId = u64;
@@ -239,11 +239,7 @@ impl StorageBackend for InMemoryStorage {
             .snapshots
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        snaps
-            .values()
-            .rev()
-            .map(|(info, _)| info.clone())
-            .collect()
+        snaps.values().rev().map(|(info, _)| info.clone()).collect()
     }
 
     fn restore_snapshot(&self, id: SnapshotId) -> Result<usize, String> {

@@ -23,6 +23,7 @@ pub mod storage;
 pub mod tenant;
 
 // Re-export key types at crate root
+pub use audit_sink::{AuditForwardingConfig, AuditSink, CallbackAuditSink};
 pub use backend::{ComponentBackend, EntityBackend, ExtendedDiagBackend};
 pub use bridge::{BridgeError, BridgeTransport};
 pub use data_catalog::{
@@ -34,10 +35,9 @@ pub use diag::{
 };
 pub use error::{ConnectionError, DiagServiceError, DoipGatewaySetupError, SomeIpError};
 pub use feature_flags::{FeatureFlagConfig, FeatureFlags, SharedFeatureFlags};
-pub use audit_sink::{AuditForwardingConfig, AuditSink, CallbackAuditSink};
+pub use firmware_verify::{Ed25519Verifier, FirmwareVerifier, NoopVerifier, VerificationResult};
 pub use oem::{DefaultProfile, OemProfile};
 pub use rbac::{RbacConfig, RbacPolicy, RbacRole};
 pub use secrets::{EnvSecretProvider, SecretProvider, StaticSecretProvider};
 pub use storage::{InMemoryStorage, SnapshotId, SnapshotInfo, StorageBackend};
-pub use firmware_verify::{Ed25519Verifier, FirmwareVerifier, NoopVerifier, VerificationResult};
 pub use tenant::{MultiTenantConfig, TenantContext, TenantIsolation};

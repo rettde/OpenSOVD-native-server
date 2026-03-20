@@ -279,7 +279,7 @@ impl Default for MetricsConfig {
 /// verify = true                                       # default: false (NoopVerifier)
 /// public_key_hex = "aabbccdd..."                      # 32-byte Ed25519 public key (hex)
 /// ```
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 struct FirmwareConfig {
     /// Enable firmware signature verification before activation.
     #[serde(default)]
@@ -287,15 +287,6 @@ struct FirmwareConfig {
     /// Ed25519 public key (hex-encoded, 32 bytes) for signature verification.
     #[serde(default)]
     public_key_hex: Option<String>,
-}
-
-impl Default for FirmwareConfig {
-    fn default() -> Self {
-        Self {
-            verify: false,
-            public_key_hex: None,
-        }
-    }
 }
 
 /// Build the firmware verifier from configuration.
@@ -308,11 +299,15 @@ fn build_firmware_verifier(config: &AppConfig) -> Arc<dyn native_interfaces::Fir
                     return Arc::new(v);
                 }
                 Err(e) => {
-                    tracing::error!("Invalid firmware public key: {e} — falling back to NoopVerifier");
+                    tracing::error!(
+                        "Invalid firmware public key: {e} — falling back to NoopVerifier"
+                    );
                 }
             }
         } else {
-            tracing::warn!("firmware.verify=true but no public_key_hex configured — using NoopVerifier");
+            tracing::warn!(
+                "firmware.verify=true but no public_key_hex configured — using NoopVerifier"
+            );
         }
     }
     Arc::new(native_interfaces::NoopVerifier)

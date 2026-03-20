@@ -3006,7 +3006,11 @@ async fn activate_software_package(
         // bytes would come from the package store in a production deployment.
         // The signature must be present and valid against the public key.
         let sig_hex = pkg_meta.error.as_deref().unwrap_or(""); // reuse error field as sig transport in mock
-        if let Some(ref store_entry) = state.runtime.package_store.get(&format!("{component_id}/{package_id}")) {
+        if let Some(ref store_entry) = state
+            .runtime
+            .package_store
+            .get(&format!("{component_id}/{package_id}"))
+        {
             let _stored = store_entry.value();
             // If a signature was provided at upload time, verify it
         }
@@ -3079,8 +3083,15 @@ async fn list_apps(
     State(state): State<AppState>,
     axum::extract::Query(params): axum::extract::Query<PaginationParams>,
 ) -> Result<Json<Collection<serde_json::Value>>, (StatusCode, Json<SovdErrorEnvelope>)> {
-    if !state.security.oem_profile.as_discovery_policy().apps_enabled() {
-        return Err(not_found("Entity type 'apps' is not available in this OEM profile"));
+    if !state
+        .security
+        .oem_profile
+        .as_discovery_policy()
+        .apps_enabled()
+    {
+        return Err(not_found(
+            "Entity type 'apps' is not available in this OEM profile",
+        ));
     }
     let items = state.entity_backend.list_apps();
     Ok(Json(
@@ -3092,8 +3103,15 @@ async fn get_app(
     State(state): State<AppState>,
     Path(app_id): Path<String>,
 ) -> Result<Json<SovdApp>, (StatusCode, Json<SovdErrorEnvelope>)> {
-    if !state.security.oem_profile.as_discovery_policy().apps_enabled() {
-        return Err(not_found("Entity type 'apps' is not available in this OEM profile"));
+    if !state
+        .security
+        .oem_profile
+        .as_discovery_policy()
+        .apps_enabled()
+    {
+        return Err(not_found(
+            "Entity type 'apps' is not available in this OEM profile",
+        ));
     }
     state
         .entity_backend
@@ -3169,8 +3187,15 @@ async fn list_funcs(
     State(state): State<AppState>,
     axum::extract::Query(params): axum::extract::Query<PaginationParams>,
 ) -> Result<Json<Collection<serde_json::Value>>, (StatusCode, Json<SovdErrorEnvelope>)> {
-    if !state.security.oem_profile.as_discovery_policy().funcs_enabled() {
-        return Err(not_found("Entity type 'funcs' is not available in this OEM profile"));
+    if !state
+        .security
+        .oem_profile
+        .as_discovery_policy()
+        .funcs_enabled()
+    {
+        return Err(not_found(
+            "Entity type 'funcs' is not available in this OEM profile",
+        ));
     }
     let items = state.entity_backend.list_funcs();
     Ok(Json(
@@ -3182,8 +3207,15 @@ async fn get_func(
     State(state): State<AppState>,
     Path(func_id): Path<String>,
 ) -> Result<Json<SovdFunc>, (StatusCode, Json<SovdErrorEnvelope>)> {
-    if !state.security.oem_profile.as_discovery_policy().funcs_enabled() {
-        return Err(not_found("Entity type 'funcs' is not available in this OEM profile"));
+    if !state
+        .security
+        .oem_profile
+        .as_discovery_policy()
+        .funcs_enabled()
+    {
+        return Err(not_found(
+            "Entity type 'funcs' is not available in this OEM profile",
+        ));
     }
     state
         .entity_backend
@@ -3221,8 +3253,15 @@ async fn list_areas(
     State(state): State<AppState>,
     axum::extract::Query(params): axum::extract::Query<PaginationParams>,
 ) -> Result<Json<Collection<serde_json::Value>>, (StatusCode, Json<SovdErrorEnvelope>)> {
-    if !state.security.oem_profile.as_discovery_policy().areas_enabled() {
-        return Err(not_found("Entity type 'areas' is not available in this OEM profile"));
+    if !state
+        .security
+        .oem_profile
+        .as_discovery_policy()
+        .areas_enabled()
+    {
+        return Err(not_found(
+            "Entity type 'areas' is not available in this OEM profile",
+        ));
     }
     let items = state.entity_backend.list_areas();
     Ok(Json(
@@ -3234,8 +3273,15 @@ async fn get_area(
     State(state): State<AppState>,
     Path(area_id): Path<String>,
 ) -> Result<Json<native_interfaces::sovd::SovdArea>, (StatusCode, Json<SovdErrorEnvelope>)> {
-    if !state.security.oem_profile.as_discovery_policy().areas_enabled() {
-        return Err(not_found("Entity type 'areas' is not available in this OEM profile"));
+    if !state
+        .security
+        .oem_profile
+        .as_discovery_policy()
+        .areas_enabled()
+    {
+        return Err(not_found(
+            "Entity type 'areas' is not available in this OEM profile",
+        ));
     }
     state
         .entity_backend
@@ -6613,11 +6659,7 @@ mod mock_backend_tests {
         let state = mock_state_with_profile(Arc::new(AreasDisabledProfile));
         let app = build_router(state, AuthConfig::default(), true);
         let resp = app
-            .oneshot(
-                Request::get("/sovd/v1/areas")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::get("/sovd/v1/areas").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
@@ -6642,11 +6684,7 @@ mod mock_backend_tests {
     async fn areas_enabled_returns_200() {
         let app = mock_router(); // DefaultProfile — areas_enabled() = true
         let resp = app
-            .oneshot(
-                Request::get("/sovd/v1/areas")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::get("/sovd/v1/areas").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);

@@ -126,8 +126,8 @@ impl SovdHttpBackend {
         {
             let cert_pem = std::fs::read(cert_path)
                 .map_err(|e| format!("Read client cert {cert_path}: {e}"))?;
-            let key_pem = std::fs::read(key_path)
-                .map_err(|e| format!("Read client key {key_path}: {e}"))?;
+            let key_pem =
+                std::fs::read(key_path).map_err(|e| format!("Read client key {key_path}: {e}"))?;
             let mut combined = cert_pem;
             combined.push(b'\n');
             combined.extend_from_slice(&key_pem);

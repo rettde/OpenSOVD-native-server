@@ -32,9 +32,15 @@ impl RbacRole {
     /// Check if this role allows the given method on the given resource.
     pub fn allows(&self, method: &str, resource: &str) -> bool {
         self.permissions.contains(&("*".to_owned(), "*".to_owned()))
-            || self.permissions.contains(&(method.to_owned(), "*".to_owned()))
-            || self.permissions.contains(&("*".to_owned(), resource.to_owned()))
-            || self.permissions.contains(&(method.to_owned(), resource.to_owned()))
+            || self
+                .permissions
+                .contains(&(method.to_owned(), "*".to_owned()))
+            || self
+                .permissions
+                .contains(&("*".to_owned(), resource.to_owned()))
+            || self
+                .permissions
+                .contains(&(method.to_owned(), resource.to_owned()))
     }
 }
 
@@ -72,15 +78,11 @@ impl Default for RbacPolicy {
         });
 
         // operator: read + write + execute (no DELETE on audit, lock override)
-        let operator_perms: HashSet<(String, String)> = [
-            ("GET", "*"),
-            ("POST", "*"),
-            ("PUT", "*"),
-            ("PATCH", "*"),
-        ]
-        .iter()
-        .map(|(m, r)| ((*m).to_owned(), (*r).to_owned()))
-        .collect();
+        let operator_perms: HashSet<(String, String)> =
+            [("GET", "*"), ("POST", "*"), ("PUT", "*"), ("PATCH", "*")]
+                .iter()
+                .map(|(m, r)| ((*m).to_owned(), (*r).to_owned()))
+                .collect();
         policy.add_role(RbacRole {
             name: "operator".to_owned(),
             permissions: operator_perms,

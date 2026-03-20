@@ -12,7 +12,7 @@
 #   docker run -v /path/to/config:/config -p 8080:8080 opensovd-native:latest
 
 # ── Stage 1: Build ──────────────────────────────────────────────────────────
-FROM rust:1.85-bookworm AS builder
+FROM rust:1-bookworm AS builder
 
 WORKDIR /build
 COPY . .
