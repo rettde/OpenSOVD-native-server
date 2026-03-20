@@ -18,6 +18,7 @@ use dashmap::DashMap;
 use native_core::{AuditLog, DiagLog, FaultManager, HistoryService, LockManager};
 use native_health::HealthMonitor;
 use native_interfaces::data_catalog::DataCatalogProvider;
+use native_interfaces::firmware_verify::FirmwareVerifier;
 use native_interfaces::oem::OemProfile;
 use native_interfaces::sovd::SovdSoftwarePackage;
 use native_interfaces::sovd::{SovdOperationExecution, SovdProximityChallenge};
@@ -66,6 +67,8 @@ pub struct RuntimeState {
     pub package_store: Arc<DashMap<String, SovdSoftwarePackage>>,
     /// Runtime feature flags (E2.4) — lock-free atomic toggles
     pub feature_flags: native_interfaces::SharedFeatureFlags,
+    /// Firmware signature verifier (F12, ISO 24089)
+    pub firmware_verifier: Arc<dyn FirmwareVerifier>,
 }
 
 // ── Top-level AppState ──────────────────────────────────────────────────────

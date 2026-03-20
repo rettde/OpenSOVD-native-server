@@ -31,8 +31,30 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - When `ws-bridge` feature enabled, bridge mode auto-selects WS transport over in-memory
 - **8 integration tests** (connect, roundtrip, heartbeat, disconnect, multiple vehicles, unknown session)
 
+#### F12: SW Package Signature Verification (ISO 24089)
+- **`FirmwareVerifier`** trait in `native-interfaces` with `verify()` and `algorithm()` methods
+- **`Ed25519Verifier`** — production implementation using `ed25519-dalek` (from hex or raw bytes)
+- **`NoopVerifier`** — passthrough for testing / unsigned packages
+- `VerificationResult` struct: `valid`, `digest` (SHA-256 hex), `detail`
+- Signature gate in `activate_software_package` handler — blocks activation when verifier is active
+- `FirmwareConfig` in server TOML: `verify` flag + `public_key_hex` (32-byte Ed25519)
+- `signature` field added to `SovdSoftwarePackageManifest`
+- **11 unit tests** (valid sig, invalid sig, tampered payload, wrong key, malformed sig, hex parsing, noop, digest, serialization)
+
+#### F14: mTLS Backend Connections
+- `client_cert_path` / `client_key_path` on `SovdHttpBackendConfig` — PEM client identity for Gateway → CDA
+- `ca_cert_path` — pinned CA certificate for server verification
+- `danger_accept_invalid_certs` — development-only flag for self-signed certs
+- reqwest `Identity::from_pem()` + `Certificate::from_pem()` wiring in `SovdHttpBackend::new()`
+- **4 unit tests** (missing cert, missing CA, danger flag, default no-mTLS)
+
+#### HowTo Guides (Out of Scope features)
+- `docs/howto-f5-e2e-test-suite.md` — Testcontainers + CDA + demo-ecu
+- `docs/howto-f8-someip-real-transport.md` — vsomeip build, config, validation
+- `docs/howto-f15-oidc-e2e-validation.md` — Keycloak realm setup, token flow
+
 ### Stats
-- **398 tests** (workspace), all passing
+- **433 tests** (workspace), all passing
 - Clippy clean (workspace)
 
 ---

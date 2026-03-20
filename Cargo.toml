@@ -90,6 +90,9 @@ sysinfo = "0.30"
 # ── Cryptographic hashing (audit log chain integrity) ───────────────────────
 sha2 = "0.10"
 
+# ── Firmware signature verification (F12, ISO 24089) ────────────────────────
+ed25519-dalek = { version = "2", features = ["pkcs8", "pem"] }
+
 # ── WebSocket (bridge transport, F3) ────────────────────────────────────────
 tokio-tungstenite = { version = "0.24", default-features = false, features = ["handshake", "connect"] }
 

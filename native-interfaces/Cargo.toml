@@ -31,3 +31,5 @@ tracing = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 uuid = { workspace = true, features = ["v4", "serde"] }
 hex = { workspace = true }
+sha2 = { workspace = true }
+ed25519-dalek = { workspace = true }

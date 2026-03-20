@@ -51,6 +51,22 @@ pub struct SovdHttpBackendConfig {
     /// Component IDs managed by this backend (discovered if empty)
     #[serde(default)]
     pub component_ids: Vec<String>,
+
+    // ── mTLS configuration (F14) ────────────────────────────────────────
+    /// Path to PEM-encoded client certificate for mTLS.
+    /// When both `client_cert_path` and `client_key_path` are set, mTLS is enabled.
+    #[serde(default)]
+    pub client_cert_path: Option<String>,
+    /// Path to PEM-encoded client private key for mTLS.
+    #[serde(default)]
+    pub client_key_path: Option<String>,
+    /// Path to PEM-encoded CA certificate for server verification.
+    /// When set, only servers signed by this CA are trusted (pinned CA).
+    #[serde(default)]
+    pub ca_cert_path: Option<String>,
+    /// Accept invalid/self-signed server certificates (DEVELOPMENT ONLY).
+    #[serde(default)]
+    pub danger_accept_invalid_certs: bool,
 }
 
 fn default_api_prefix() -> String {
@@ -72,6 +88,10 @@ impl Default for SovdHttpBackendConfig {
             timeout_secs: default_timeout(),
             bearer_token: None,
             component_ids: vec![],
+            client_cert_path: None,
+            client_key_path: None,
+            ca_cert_path: None,
+            danger_accept_invalid_certs: false,
         }
     }
 }
@@ -98,6 +118,43 @@ impl SovdHttpBackend {
                 .map_err(|e| format!("Invalid bearer token: {e}"))?;
             headers.insert(reqwest::header::AUTHORIZATION, val);
             builder = builder.default_headers(headers);
+        }
+
+        // F14 — mTLS client identity for Gateway → CDA/backend links
+        if let (Some(cert_path), Some(key_path)) =
+            (&config.client_cert_path, &config.client_key_path)
+        {
+            let cert_pem = std::fs::read(cert_path)
+                .map_err(|e| format!("Read client cert {cert_path}: {e}"))?;
+            let key_pem = std::fs::read(key_path)
+                .map_err(|e| format!("Read client key {key_path}: {e}"))?;
+            let mut combined = cert_pem;
+            combined.push(b'\n');
+            combined.extend_from_slice(&key_pem);
+            let identity = reqwest::Identity::from_pem(&combined)
+                .map_err(|e| format!("Parse mTLS identity: {e}"))?;
+            builder = builder.identity(identity);
+            info!(
+                cert = %cert_path,
+                key = %key_path,
+                "mTLS client identity configured for backend"
+            );
+        }
+
+        // F14 — Custom CA certificate for server verification (pinned CA)
+        if let Some(ref ca_path) = config.ca_cert_path {
+            let ca_pem =
+                std::fs::read(ca_path).map_err(|e| format!("Read CA cert {ca_path}: {e}"))?;
+            let ca_cert = reqwest::Certificate::from_pem(&ca_pem)
+                .map_err(|e| format!("Parse CA cert: {e}"))?;
+            builder = builder.add_root_certificate(ca_cert);
+            info!(ca = %ca_path, "Custom CA certificate configured for backend");
+        }
+
+        // F14 — Development: accept self-signed certs (NEVER use in production)
+        if config.danger_accept_invalid_certs {
+            warn!("danger_accept_invalid_certs=true — accepting ANY server certificate (DEV ONLY)");
+            builder = builder.danger_accept_invalid_certs(true);
         }
 
         let client = builder
@@ -619,6 +676,10 @@ mod tests {
             timeout_secs: 5,
             bearer_token: None,
             component_ids: vec!["brake-ecu".to_owned(), "eps-ecu".to_owned()],
+            client_cert_path: None,
+            client_key_path: None,
+            ca_cert_path: None,
+            danger_accept_invalid_certs: false,
         }
     }
 
@@ -784,5 +845,53 @@ mod tests {
         let backend = SovdHttpBackend::new(config).unwrap();
         let result = backend.discover().await;
         assert!(result.is_err());
+    }
+
+    // ── mTLS configuration tests (F14) ──────────────────────────────────
+
+    #[test]
+    fn mtls_missing_cert_file_returns_error() {
+        let config = SovdHttpBackendConfig {
+            client_cert_path: Some("/nonexistent/client.pem".into()),
+            client_key_path: Some("/nonexistent/client-key.pem".into()),
+            ..test_config()
+        };
+        let result = SovdHttpBackend::new(config);
+        match result {
+            Err(e) => assert!(e.contains("Read client cert"), "unexpected error: {e}"),
+            Ok(_) => panic!("expected error for missing cert file"),
+        }
+    }
+
+    #[test]
+    fn mtls_missing_ca_file_returns_error() {
+        let config = SovdHttpBackendConfig {
+            ca_cert_path: Some("/nonexistent/ca.pem".into()),
+            ..test_config()
+        };
+        let result = SovdHttpBackend::new(config);
+        match result {
+            Err(e) => assert!(e.contains("Read CA cert"), "unexpected error: {e}"),
+            Ok(_) => panic!("expected error for missing CA file"),
+        }
+    }
+
+    #[test]
+    fn mtls_danger_accept_invalid_certs_builds_ok() {
+        let config = SovdHttpBackendConfig {
+            danger_accept_invalid_certs: true,
+            ..test_config()
+        };
+        let backend = SovdHttpBackend::new(config);
+        assert!(backend.is_ok());
+    }
+
+    #[test]
+    fn default_config_has_no_mtls() {
+        let config = SovdHttpBackendConfig::default();
+        assert!(config.client_cert_path.is_none());
+        assert!(config.client_key_path.is_none());
+        assert!(config.ca_cert_path.is_none());
+        assert!(!config.danger_accept_invalid_certs);
     }
 }

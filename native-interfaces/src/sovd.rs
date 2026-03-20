@@ -661,6 +661,9 @@ pub struct SovdSoftwarePackageManifest {
     /// Package size in bytes
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<u64>,
+    /// Detached Ed25519 signature (hex-encoded, F12 — ISO 24089)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
 }
 
 // ── Bulk Data (SOVD Standard §7.5.3) ─────────────────────────────────────

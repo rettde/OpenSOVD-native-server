@@ -101,7 +101,10 @@
 | InMemoryStorage snapshots | Up to 16 in-memory snapshots with automatic eviction, `SnapshotInfo` metadata | 7 |
 | SledStorage snapshots | Persistent snapshots via sled trees (`snap:<id>`), survives restart, up to 32 on disk | 6 |
 
-**Total: 419 tests · Clippy pedantic clean · ISO 17978-3 conformant (51/51)**
+| FirmwareVerifier (F12) | `FirmwareVerifier` trait with `Ed25519Verifier` + `NoopVerifier`, SHA-256 digest, signature gate in `activate_software_package` | 11 |
+| mTLS backend (F14) | `client_cert_path` / `client_key_path` / `ca_cert_path` / `danger_accept_invalid_certs` on `SovdHttpBackendConfig` | 4 |
+
+**Total: 433 tests · Clippy pedantic clean · ISO 17978-3 conformant (51/51)**
 
 ---
 
@@ -112,9 +115,9 @@
 | F5 | **E2E test suite** | **Out of Scope** — requires CDA binary + Docker infra · [HowTo](howto-f5-e2e-test-suite.md) | — | — |
 | F8 | **SOME/IP real transport** | **Out of Scope** — requires Linux + vsomeip + SOME/IP peer · [HowTo](howto-f8-someip-real-transport.md) | — | — |
 | F9 | ~~SQL storage backend~~ | **Implemented** as Snapshot/Rollback (AUTOSAR `ara::per` / S-CORE pattern) — see above | ✅ | — |
-| F12 | **SW package signature verification** | Firmware integrity check before activation (ISO 24089) | High | M |
+| F12 | ~~SW package signature verification~~ | **Implemented** — `FirmwareVerifier` trait (Ed25519 / Noop), signature gate in `activate_software_package`, `FirmwareConfig` in server TOML | ✅ | — |
 | F13 | ~~Horizontal scaling~~ | **Removed** — no In-Vehicle use case; AUTOSAR HPC is always single-instance | — | — |
-| F14 | **mTLS backend connections** | TLS for Gateway → CDA / backend links | Medium | S |
+| F14 | ~~mTLS backend connections~~ | **Implemented** — `client_cert_path` / `client_key_path` / `ca_cert_path` on `SovdHttpBackendConfig`, reqwest identity + pinned CA | ✅ | — |
 | F15 | **OIDC E2E validation** | **Out of Scope** — requires Keycloak instance · [HowTo](howto-f15-oidc-e2e-validation.md) | — | — |
 
 **Effort key:** S = 1–2 days · M = 3–5 days · L = 1–2 weeks

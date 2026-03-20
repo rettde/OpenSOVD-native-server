@@ -72,6 +72,9 @@ struct AppConfig {
     /// Secret provider configuration (F4)
     #[serde(default)]
     secrets: SecretsConfig,
+    /// Firmware signature verification (F12, ISO 24089)
+    #[serde(default)]
+    firmware: FirmwareConfig,
 
     // ── Backend configuration ───────────────────────────────────────────
     /// External SOVD backends (CDA instances, native SOVD endpoints)
@@ -267,6 +270,52 @@ impl Default for MetricsConfig {
             path: Self::default_path(),
         }
     }
+}
+
+/// Firmware signature verification configuration (F12, ISO 24089).
+///
+/// ```toml
+/// [firmware]
+/// verify = true                                       # default: false (NoopVerifier)
+/// public_key_hex = "aabbccdd..."                      # 32-byte Ed25519 public key (hex)
+/// ```
+#[derive(Debug, Deserialize)]
+struct FirmwareConfig {
+    /// Enable firmware signature verification before activation.
+    #[serde(default)]
+    verify: bool,
+    /// Ed25519 public key (hex-encoded, 32 bytes) for signature verification.
+    #[serde(default)]
+    public_key_hex: Option<String>,
+}
+
+impl Default for FirmwareConfig {
+    fn default() -> Self {
+        Self {
+            verify: false,
+            public_key_hex: None,
+        }
+    }
+}
+
+/// Build the firmware verifier from configuration.
+fn build_firmware_verifier(config: &AppConfig) -> Arc<dyn native_interfaces::FirmwareVerifier> {
+    if config.firmware.verify {
+        if let Some(ref hex_key) = config.firmware.public_key_hex {
+            match native_interfaces::Ed25519Verifier::from_hex(hex_key) {
+                Ok(v) => {
+                    info!("Firmware signature verification enabled (Ed25519)");
+                    return Arc::new(v);
+                }
+                Err(e) => {
+                    tracing::error!("Invalid firmware public key: {e} — falling back to NoopVerifier");
+                }
+            }
+        } else {
+            tracing::warn!("firmware.verify=true but no public_key_hex configured — using NoopVerifier");
+        }
+    }
+    Arc::new(native_interfaces::NoopVerifier)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -560,6 +609,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start lock expiry reaper (SOVD §7.4)
     let _lock_reaper = lock_manager.start_reaper();
 
+    // F12 — Build firmware verifier before config is partially moved
+    let firmware_verifier = build_firmware_verifier(&config);
+
     // Initialize SOME/IP runtime (stub mode if vsomeip-ffi not enabled)
     let someip_runtime = SomeIpRuntime::new(config.someip);
     if let Err(e) = someip_runtime.init().await {
@@ -659,6 +711,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             proximity_store: Arc::new(DashMap::new()),
             package_store: Arc::new(DashMap::new()),
             feature_flags: Arc::new(native_interfaces::FeatureFlags::new()),
+            firmware_verifier,
         },
         data_catalog: Arc::new(native_interfaces::StaticDataCatalogProvider::new()),
     };
