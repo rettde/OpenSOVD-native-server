@@ -649,4 +649,314 @@ mod tests {
         )
         .unwrap();
     }
+
+    // ── T1.1: OpenAPI Contract Tests ─────────────────────────────────────
+    //
+    // Validate the generated CDF spec against ISO 17978-3 / ASAM SOVD V1.1.0
+    // structural requirements. These tests catch:
+    //   - Missing mandatory paths
+    //   - Missing schemas
+    //   - Incorrect OpenAPI version
+    //   - Missing x-sovd-* extensions
+    //   - Missing security schemes
+    //   - Drift between routes.rs endpoints and CDF paths
+
+    #[test]
+    fn contract_openapi_version_is_3_1() {
+        let spec = build_openapi_json();
+        assert_eq!(spec["openapi"], "3.1.0");
+    }
+
+    #[test]
+    fn contract_info_block_has_required_fields() {
+        let spec = build_openapi_json();
+        let info = &spec["info"];
+        assert!(info["title"].is_string(), "info.title missing");
+        assert!(info["version"].is_string(), "info.version missing");
+        assert!(info["x-sovd-version"].is_string(), "x-sovd-version missing");
+        assert!(info["x-sovd-applicability"].is_object(), "x-sovd-applicability missing");
+        assert!(
+            info["x-sovd-applicability"]["online"].is_boolean(),
+            "x-sovd-applicability.online missing"
+        );
+    }
+
+    #[test]
+    fn contract_server_url_is_sovd_v1() {
+        let spec = build_openapi_json();
+        let servers = spec["servers"].as_array().expect("servers must be array");
+        assert!(!servers.is_empty(), "servers array is empty");
+        assert_eq!(servers[0]["url"], "/sovd/v1");
+    }
+
+    #[test]
+    fn contract_mandatory_sovd_paths_present() {
+        let spec = build_openapi_json();
+        let paths = spec["paths"].as_object().expect("paths must be object");
+
+        // ISO 17978-3 mandatory paths (ASAM SOVD §5.3)
+        let mandatory = [
+            "/",                                                          // §7.6.3 Discovery
+            "/components",                                                // §7.6.2.1 Components
+            "/components/{component_id}",                                 // §7.6.3 Component detail
+            "/components/{component_id}/data",                            // §7.9.3 Data list
+            "/components/{component_id}/data/{data_id}",                  // §7.9.4 Data read/write
+            "/components/{component_id}/faults",                          // §7.8.2 Fault list
+            "/components/{component_id}/faults/{fault_id}",               // §7.8.3 Fault detail
+            "/components/{component_id}/operations",                      // §7.14.3 Operation list
+            "/components/{component_id}/operations/{op_id}/executions",   // §7.14.4 Executions
+            "/components/{component_id}/operations/{op_id}/executions/{exec_id}", // §7.14 Execution detail
+            "/components/{component_id}/modes",                           // §7.16.2 Mode list
+            "/components/{component_id}/modes/{mode_id}",                 // §7.16.3 Mode detail
+            "/components/{component_id}/locks",                           // §7.17 Locking
+            "/components/{component_id}/configurations",                  // §7.12 Configuration
+            "/components/{component_id}/logs",                            // §7.21 Logs
+        ];
+
+        for path in &mandatory {
+            assert!(
+                paths.contains_key(*path),
+                "Mandatory SOVD path missing from CDF: {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn contract_data_path_has_get_and_put() {
+        let spec = build_openapi_json();
+        let data_path = &spec["paths"]["/components/{component_id}/data/{data_id}"];
+        assert!(data_path["get"].is_object(), "data GET missing");
+        assert!(data_path["put"].is_object(), "data PUT missing");
+    }
+
+    #[test]
+    fn contract_faults_path_has_get_and_delete() {
+        let spec = build_openapi_json();
+        let faults = &spec["paths"]["/components/{component_id}/faults"];
+        assert!(faults["get"].is_object(), "faults GET missing");
+        assert!(faults["delete"].is_object(), "faults DELETE missing");
+    }
+
+    #[test]
+    fn contract_executions_path_has_get_and_post() {
+        let spec = build_openapi_json();
+        let execs =
+            &spec["paths"]["/components/{component_id}/operations/{op_id}/executions"];
+        assert!(execs["get"].is_object(), "executions GET missing");
+        assert!(execs["post"].is_object(), "executions POST missing");
+    }
+
+    #[test]
+    fn contract_execution_post_returns_202_with_location() {
+        let spec = build_openapi_json();
+        let post =
+            &spec["paths"]["/components/{component_id}/operations/{op_id}/executions"]["post"];
+        let responses = &post["responses"];
+        assert!(responses["202"].is_object(), "202 Accepted response missing");
+        assert!(
+            responses["202"]["headers"]["Location"].is_object(),
+            "Location header on 202 missing"
+        );
+    }
+
+    #[test]
+    fn contract_mode_path_has_get_and_put() {
+        let spec = build_openapi_json();
+        let mode = &spec["paths"]["/components/{component_id}/modes/{mode_id}"];
+        assert!(mode["get"].is_object(), "mode GET missing");
+        assert!(mode["put"].is_object(), "mode PUT missing");
+    }
+
+    #[test]
+    fn contract_mandatory_schemas_present() {
+        let spec = build_openapi_json();
+        let schemas = spec["components"]["schemas"]
+            .as_object()
+            .expect("schemas must be object");
+
+        let required_schemas = [
+            "SovdError",
+            "EntityRef",
+            "EntityCollection",
+            "FaultSummary",
+            "FaultCollection",
+            "DataResourceSummary",
+            "DataResourceCollection",
+            "DataResourceValue",
+            "OperationSummary",
+            "OperationCollection",
+            "ExecutionRef",
+            "ExecutionCollection",
+            "ModeSummary",
+            "ModeCollection",
+            "ModeDetail",
+            "ConfigurationDetail",
+            "LogCollection",
+        ];
+
+        for schema in &required_schemas {
+            assert!(
+                schemas.contains_key(*schema),
+                "Required schema missing from CDF: {schema}"
+            );
+        }
+    }
+
+    #[test]
+    fn contract_security_schemes_present() {
+        let spec = build_openapi_json();
+        let schemes = spec["components"]["securitySchemes"]
+            .as_object()
+            .expect("securitySchemes must be object");
+
+        assert!(schemes.contains_key("ApiKeyAuth"), "ApiKeyAuth scheme missing");
+        assert!(schemes.contains_key("BearerAuth"), "BearerAuth scheme missing");
+        assert_eq!(schemes["ApiKeyAuth"]["type"], "apiKey");
+        assert_eq!(schemes["BearerAuth"]["type"], "http");
+        assert_eq!(schemes["BearerAuth"]["scheme"], "bearer");
+    }
+
+    #[test]
+    fn contract_global_security_requirement_set() {
+        let spec = build_openapi_json();
+        let security = spec["security"].as_array().expect("security must be array");
+        assert!(
+            !security.is_empty(),
+            "Global security requirement is empty"
+        );
+    }
+
+    #[test]
+    fn contract_x_sovd_extensions_on_data_paths() {
+        let spec = build_openapi_json();
+        let data_path = &spec["paths"]["/components/{component_id}/data/{data_id}"];
+        assert!(
+            data_path["x-sovd-data-category"].is_string(),
+            "x-sovd-data-category missing on data path"
+        );
+        assert!(
+            data_path["x-sovd-unit"].is_string(),
+            "x-sovd-unit missing on data path"
+        );
+    }
+
+    #[test]
+    fn contract_x_sovd_name_on_key_resources() {
+        let spec = build_openapi_json();
+        let paths = spec["paths"].as_object().unwrap();
+
+        // Paths that MUST have x-sovd-name (ASAM SOVD §5.3)
+        let named_paths = [
+            "/",
+            "/components",
+            "/components/{component_id}",
+            "/components/{component_id}/data/{data_id}",
+            "/components/{component_id}/faults/{fault_id}",
+            "/components/{component_id}/modes/{mode_id}",
+        ];
+
+        for path in &named_paths {
+            if let Some(p) = paths.get(*path) {
+                assert!(
+                    p.get("x-sovd-name").is_some(),
+                    "x-sovd-name missing on {path}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn contract_all_operations_have_operation_id() {
+        let spec = build_openapi_json();
+        let paths = spec["paths"].as_object().unwrap();
+        let methods = ["get", "post", "put", "delete", "patch"];
+
+        for (path, path_obj) in paths {
+            for method in &methods {
+                if let Some(op) = path_obj.get(*method) {
+                    assert!(
+                        op.get("operationId").is_some(),
+                        "operationId missing on {method} {path}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn contract_all_operations_have_responses() {
+        let spec = build_openapi_json();
+        let paths = spec["paths"].as_object().unwrap();
+        let methods = ["get", "post", "put", "delete", "patch"];
+
+        for (path, path_obj) in paths {
+            for method in &methods {
+                if let Some(op) = path_obj.get(*method) {
+                    assert!(
+                        op["responses"].is_object(),
+                        "responses missing on {method} {path}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn contract_apps_path_present() {
+        let spec = build_openapi_json();
+        let paths = spec["paths"].as_object().unwrap();
+        assert!(
+            paths.contains_key("/apps"),
+            "Apps path missing — required by ISO 17978-3 §4.2.3"
+        );
+    }
+
+    #[test]
+    fn contract_spec_is_valid_json_roundtrip() {
+        let spec = build_openapi_json();
+        let json_str = serde_json::to_string(&spec).unwrap();
+        let reparsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(spec, reparsed, "JSON roundtrip failed");
+    }
+
+    #[test]
+    fn contract_oem_policy_affects_applicability() {
+        use native_interfaces::oem::{CdfApplicability, CdfPolicy};
+
+        struct OfflineCapablePolicy;
+        impl CdfPolicy for OfflineCapablePolicy {
+            fn applicability(&self) -> CdfApplicability {
+                CdfApplicability {
+                    online: true,
+                    offline: true,
+                }
+            }
+        }
+
+        let spec = build_openapi_json_with_policy(&OfflineCapablePolicy, None);
+        assert_eq!(spec["info"]["x-sovd-applicability"]["offline"], true);
+    }
+
+    #[test]
+    fn contract_filter_returns_subset() {
+        let full = build_openapi_json();
+        let full_paths = full["paths"].as_object().unwrap();
+
+        let data_only = build_openapi_json_with_policy(
+            &native_interfaces::DefaultProfile,
+            Some("data"),
+        );
+        let data_paths = data_only["paths"].as_object().unwrap();
+
+        assert!(
+            data_paths.len() < full_paths.len(),
+            "Filtered spec should have fewer paths"
+        );
+        for (path, _) in data_paths {
+            assert!(
+                path.contains("data") || path.contains("bulk"),
+                "Filtered path {path} doesn't match 'data' filter"
+            );
+        }
+    }
 }

@@ -1,0 +1,62 @@
+# Copyright (c) 2024 Contributors to the Eclipse OpenSOVD project
+# SPDX-License-Identifier: Apache-2.0
+#
+# systemd unit for OpenSOVD-native-server
+#
+# Installation:
+#   sudo cp deploy/opensovd-native-server.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now opensovd-native-server
+#
+# Logs:
+#   journalctl -u opensovd-native-server -f
+
+[Unit]
+Description=OpenSOVD Native Server — ISO 17978-3 SOVD Diagnostic API
+Documentation=https://github.com/rettde/OpenSOVD-native-server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/opensovd-native-server
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+
+# ── Environment ─────────────────────────────────────────────────────────
+Environment=SOVD_SERVER__HOST=0.0.0.0
+Environment=SOVD_SERVER__PORT=8080
+Environment=SOVD_LOGGING__LEVEL=info
+Environment=SOVD_LOGGING__FORMAT=json
+WorkingDirectory=/etc/opensovd
+
+# ── Security hardening ──────────────────────────────────────────────────
+User=opensovd
+Group=opensovd
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/opensovd
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+MemoryDenyWriteExecute=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# ── Resource limits ─────────────────────────────────────────────────────
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

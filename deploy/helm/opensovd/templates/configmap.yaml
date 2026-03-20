@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "opensovd.fullname" . }}-config
+  labels:
+    {{- include "opensovd.labels" . | nindent 4 }}
+data:
+  opensovd-native-server.toml: |
+    [server]
+    host = "{{ .Values.server.host }}"
+    port = {{ .Values.server.port }}
+    {{- if .Values.tls.enabled }}
+    cert_path = "/tls/tls.crt"
+    key_path = "/tls/tls.key"
+    {{- if .Values.tls.mtls.enabled }}
+    client_ca_path = "/tls/ca.crt"
+    {{- end }}
+    {{- end }}
+
+    [logging]
+    level = "{{ .Values.logging.level }}"
+    format = "{{ .Values.logging.format }}"
+    {{- if .Values.logging.otlpEndpoint }}
+    otlp_endpoint = "{{ .Values.logging.otlpEndpoint }}"
+    {{- end }}
+
+    [auth]
+    enabled = {{ .Values.auth.enabled }}
+
+    [rate_limit]
+    enabled = {{ .Values.rateLimit.enabled }}
+    {{- if .Values.rateLimit.enabled }}
+    max_requests = {{ .Values.rateLimit.maxRequests }}
+    window_secs = {{ .Values.rateLimit.windowSecs }}
+    {{- end }}
+
+    [bridge]
+    enabled = {{ .Values.bridge.enabled }}
+
+    [tenant]
+    enabled = {{ .Values.tenant.enabled }}
+
+    {{- range $i, $backend := .Values.backends }}
+    [[backends]]
+    name = "{{ $backend.name }}"
+    base_url = "{{ $backend.baseUrl }}"
+    component_ids = [{{ range $j, $id := $backend.componentIds }}{{ if $j }}, {{ end }}"{{ $id }}"{{ end }}]
+    {{- end }}

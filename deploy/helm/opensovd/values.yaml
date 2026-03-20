@@ -1,0 +1,140 @@
+# Default values for OpenSOVD Native Server Helm chart
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/rettde/opensovd-native-server
+  pullPolicy: IfNotPresent
+  tag: ""  # Defaults to appVersion from Chart.yaml
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# ── Server configuration ────────────────────────────────────────────────
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+# ── TLS configuration ──────────────────────────────────────────────────
+tls:
+  enabled: false
+  port: 8443
+  # Reference to a Kubernetes TLS secret
+  secretName: ""
+  # Mutual TLS (client certificate verification)
+  mtls:
+    enabled: false
+    clientCaSecretName: ""
+
+# ── Authentication ──────────────────────────────────────────────────────
+auth:
+  enabled: false
+  # API key from Kubernetes secret
+  apiKeySecretName: ""
+  apiKeySecretKey: "api-key"
+  # JWT configuration
+  jwtSecretName: ""
+  jwtSecretKey: "jwt-secret"
+  jwtAlgorithm: "HS256"
+  # OIDC
+  oidcIssuerUrl: ""
+
+# ── Logging ─────────────────────────────────────────────────────────────
+logging:
+  level: "info"
+  format: "json"
+  # OTLP endpoint for OpenTelemetry traces
+  otlpEndpoint: ""
+
+# ── Rate limiting ───────────────────────────────────────────────────────
+rateLimit:
+  enabled: false
+  maxRequests: 100
+  windowSecs: 60
+
+# ── Cloud bridge ────────────────────────────────────────────────────────
+bridge:
+  enabled: false
+
+# ── Multi-tenant ────────────────────────────────────────────────────────
+tenant:
+  enabled: false
+
+# ── Backends (external CDA / SOVD servers) ──────────────────────────────
+backends: []
+  # - name: "cda-primary"
+  #   baseUrl: "http://cda-service:8080"
+  #   componentIds: ["ecu-hpc", "ecu-bms"]
+
+# ── Service ─────────────────────────────────────────────────────────────
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+
+# ── Ingress ─────────────────────────────────────────────────────────────
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: sovd.example.com
+      paths:
+        - path: /sovd/v1
+          pathType: Prefix
+  tls: []
+
+# ── Resources ───────────────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# ── Autoscaling ─────────────────────────────────────────────────────────
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+
+# ── Probes ──────────────────────────────────────────────────────────────
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+# ── Pod configuration ───────────────────────────────────────────────────
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podAnnotations: {}
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65534
+  fsGroup: 65534
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL

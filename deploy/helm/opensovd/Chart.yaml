@@ -1,0 +1,17 @@
+apiVersion: v2
+name: opensovd
+description: OpenSOVD Native Server — ISO 17978-3 SOVD Diagnostic API
+type: application
+version: 0.1.0
+appVersion: "0.10.0"
+keywords:
+  - sovd
+  - diagnostics
+  - automotive
+  - iso-17978
+  - obd
+home: https://github.com/rettde/OpenSOVD-native-server
+sources:
+  - https://github.com/rettde/OpenSOVD-native-server
+maintainers:
+  - name: rettde
