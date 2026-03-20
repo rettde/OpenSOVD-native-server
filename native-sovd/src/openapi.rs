@@ -59,6 +59,10 @@ pub fn build_openapi_json_with_policy(
             { "name": "Configuration", "description": "Configuration (§7.12)" },
             { "name": "Logs", "description": "Diagnostic logs (§7.21)" },
             { "name": "Updates", "description": "Software updates (§7.18)" },
+            { "name": "RXSWIN", "description": "UNECE R156 RXSWIN tracking" },
+            { "name": "TARA", "description": "ISO/SAE 21434 Threat Analysis" },
+            { "name": "UDS-Security", "description": "ISO 14229 UDS Security Access" },
+            { "name": "UCM", "description": "AUTOSAR UCM Campaign Management" },
         ],
         "paths": paths,
         "components": {
@@ -92,7 +96,7 @@ fn filter_paths(paths: &serde_json::Value, segment: &str) -> serde_json::Value {
 
 fn build_schemas() -> serde_json::Value {
     let mut map = serde_json::Map::new();
-    for sub in [core_schemas(), resource_schemas()] {
+    for sub in [core_schemas(), resource_schemas(), f15_f16_schemas(), f17_f18_schemas()] {
         if let serde_json::Value::Object(m) = sub {
             map.extend(m);
         }
@@ -185,6 +189,134 @@ fn core_schemas() -> serde_json::Value {
             "properties": {
                 "id": { "type": "string" },
                 "data": {}
+            }
+        }
+    })
+}
+
+fn f15_f16_schemas() -> serde_json::Value {
+    serde_json::json!({
+        "RxswinEntry": {
+            "type": "object",
+            "required": ["component_id", "rxswin", "software_version", "updated_at"],
+            "properties": {
+                "component_id": { "type": "string" },
+                "rxswin": { "type": "string", "description": "UNECE R156 RXSWIN identifier" },
+                "software_version": { "type": "string" },
+                "updated_at": { "type": "string", "format": "date-time" },
+                "authority": { "type": "string", "description": "Type-approval authority (e.g. KBA)" },
+                "approval_ref": { "type": "string" }
+            }
+        },
+        "RxswinReport": {
+            "type": "object",
+            "required": ["vin", "generated_at", "entries"],
+            "properties": {
+                "vin": { "type": "string" },
+                "generated_at": { "type": "string", "format": "date-time" },
+                "entries": { "type": "array", "items": { "$ref": "#/components/schemas/RxswinEntry" } }
+            }
+        },
+        "UpdateProvenanceEntry": {
+            "type": "object",
+            "required": ["id", "component_id", "previous_version", "new_version", "applied_at", "update_method"],
+            "properties": {
+                "id": { "type": "string" },
+                "component_id": { "type": "string" },
+                "previous_version": { "type": "string" },
+                "new_version": { "type": "string" },
+                "applied_at": { "type": "string", "format": "date-time" },
+                "update_method": { "type": "string", "enum": ["ota", "local", "factory"] },
+                "package_digest": { "type": "string" },
+                "rxswin_after": { "type": "string" }
+            }
+        },
+        "TaraAsset": {
+            "type": "object",
+            "required": ["id", "name", "asset_type", "confidentiality", "integrity", "availability"],
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "asset_type": { "type": "string" },
+                "confidentiality": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+                "integrity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+                "availability": { "type": "string", "enum": ["low", "medium", "high", "critical"] }
+            }
+        },
+        "TaraThreatEntry": {
+            "type": "object",
+            "required": ["id", "name", "asset_id", "attack_vector", "risk_level", "status"],
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "asset_id": { "type": "string" },
+                "attack_vector": { "type": "string" },
+                "risk_level": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+                "status": { "type": "string", "enum": ["identified", "analyzed", "mitigated", "accepted", "transferred"] },
+                "mitigation": { "type": "string" }
+            }
+        },
+        "TaraExport": {
+            "type": "object",
+            "required": ["generated_at", "assets", "threats", "summary"],
+            "properties": {
+                "generated_at": { "type": "string", "format": "date-time" },
+                "assets": { "type": "array", "items": { "$ref": "#/components/schemas/TaraAsset" } },
+                "threats": { "type": "array", "items": { "$ref": "#/components/schemas/TaraThreatEntry" } },
+                "summary": { "type": "object", "properties": {
+                    "total_assets": { "type": "integer" },
+                    "total_threats": { "type": "integer" },
+                    "mitigated": { "type": "integer" },
+                    "open": { "type": "integer" }
+                }}
+            }
+        }
+    })
+}
+
+fn f17_f18_schemas() -> serde_json::Value {
+    serde_json::json!({
+        "UdsSecurityLevel": {
+            "type": "object",
+            "required": ["level", "name", "sub_function"],
+            "properties": {
+                "level": { "type": "integer" },
+                "name": { "type": "string" },
+                "sub_function": { "type": "integer", "description": "UDS 0x27 sub-function byte" },
+                "description": { "type": "string" }
+            }
+        },
+        "UdsSecurityAccessRequest": {
+            "type": "object",
+            "required": ["level", "phase"],
+            "properties": {
+                "level": { "type": "integer" },
+                "phase": { "type": "string", "enum": ["requestSeed", "sendKey"] },
+                "key": { "type": "string", "description": "Hex-encoded key (sendKey phase only)" }
+            }
+        },
+        "UdsSecurityAccessResponse": {
+            "type": "object",
+            "required": ["level", "phase", "granted"],
+            "properties": {
+                "level": { "type": "integer" },
+                "phase": { "type": "string" },
+                "granted": { "type": "boolean" },
+                "seed": { "type": "string", "description": "Hex-encoded seed (requestSeed phase only)" },
+                "message": { "type": "string" }
+            }
+        },
+        "UcmCampaign": {
+            "type": "object",
+            "required": ["id", "name", "status", "target_components", "created_at"],
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "status": { "type": "string", "enum": ["created", "transferring", "transferred", "processing", "activating", "activated", "rollingBack", "rolledBack", "failed", "cancelled"] },
+                "target_components": { "type": "array", "items": { "type": "string" } },
+                "created_at": { "type": "string", "format": "date-time" },
+                "progress_percent": { "type": "integer", "minimum": 0, "maximum": 100 },
+                "transfer_states": { "type": "array", "items": { "type": "object" } }
             }
         }
     })
@@ -309,6 +441,10 @@ fn build_paths(cdf: &dyn CdfPolicy) -> serde_json::Value {
         operation_paths(cdf),
         mode_paths(),
         infra_paths(),
+        rxswin_paths(),
+        tara_paths(),
+        uds_security_paths(),
+        ucm_paths(),
     ] {
         if let serde_json::Value::Object(m) = sub {
             map.extend(m);
@@ -634,6 +770,196 @@ fn infra_paths() -> serde_json::Value {
     })
 }
 
+// ── F15: RXSWIN paths (UNECE R156) ─────────────────────────────────────
+
+fn rxswin_paths() -> serde_json::Value {
+    serde_json::json!({
+        "/rxswin": {
+            "x-sovd-name": "RXSWIN",
+            "get": {
+                "tags": ["RXSWIN"],
+                "summary": "List all RXSWIN entries (UNECE R156)",
+                "operationId": "list_rxswin",
+                "responses": {
+                    "200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object", "properties": { "value": { "type": "array", "items": { "$ref": "#/components/schemas/RxswinEntry" } } } } } } },
+                    "4XX": err_default()
+                }
+            }
+        },
+        "/rxswin/report": {
+            "get": {
+                "tags": ["RXSWIN"],
+                "summary": "Vehicle-level RXSWIN report",
+                "operationId": "rxswin_report",
+                "responses": {
+                    "200": ok_ref("#/components/schemas/RxswinReport"),
+                    "4XX": err_default()
+                }
+            }
+        },
+        "/rxswin/{component_id}": {
+            "get": {
+                "tags": ["RXSWIN"],
+                "summary": "Get RXSWIN for a specific component",
+                "operationId": "get_rxswin",
+                "responses": {
+                    "200": ok_ref("#/components/schemas/RxswinEntry"),
+                    "404": err_default()
+                }
+            }
+        },
+        "/update-provenance": {
+            "get": {
+                "tags": ["RXSWIN"],
+                "summary": "Update provenance log (UNECE R156 §7.1)",
+                "operationId": "list_update_provenance",
+                "responses": {
+                    "200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object", "properties": { "value": { "type": "array", "items": { "$ref": "#/components/schemas/UpdateProvenanceEntry" } } } } } } },
+                    "4XX": err_default()
+                }
+            }
+        }
+    })
+}
+
+// ── F16: TARA paths (ISO/SAE 21434) ────────────────────────────────────
+
+fn tara_paths() -> serde_json::Value {
+    serde_json::json!({
+        "/tara/assets": {
+            "get": {
+                "tags": ["TARA"],
+                "summary": "List TARA asset inventory (ISO/SAE 21434)",
+                "operationId": "list_tara_assets",
+                "responses": {
+                    "200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object", "properties": { "value": { "type": "array", "items": { "$ref": "#/components/schemas/TaraAsset" } } } } } } },
+                    "4XX": err_default()
+                }
+            }
+        },
+        "/tara/threats": {
+            "get": {
+                "tags": ["TARA"],
+                "summary": "List TARA threat entries",
+                "operationId": "list_tara_threats",
+                "responses": {
+                    "200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object", "properties": { "value": { "type": "array", "items": { "$ref": "#/components/schemas/TaraThreatEntry" } } } } } } },
+                    "4XX": err_default()
+                }
+            }
+        },
+        "/tara/export": {
+            "get": {
+                "tags": ["TARA"],
+                "summary": "Full TARA export document",
+                "operationId": "export_tara",
+                "responses": {
+                    "200": ok_ref("#/components/schemas/TaraExport"),
+                    "4XX": err_default()
+                }
+            }
+        }
+    })
+}
+
+// ── F17: UDS Security Access paths (ISO 14229) ─────────────────────────
+
+fn uds_security_paths() -> serde_json::Value {
+    serde_json::json!({
+        "/x-uds/components/{component_id}/security-levels": {
+            "get": {
+                "tags": ["UDS-Security"],
+                "summary": "List UDS security levels for component (ISO 14229 §9)",
+                "operationId": "list_security_levels",
+                "responses": {
+                    "200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object", "properties": { "value": { "type": "array", "items": { "$ref": "#/components/schemas/UdsSecurityLevel" } } } } } } },
+                    "404": err_default()
+                }
+            }
+        },
+        "/x-uds/components/{component_id}/security-access": {
+            "post": {
+                "tags": ["UDS-Security"],
+                "summary": "UDS Security Access seed/key protocol (0x27)",
+                "operationId": "security_access",
+                "requestBody": {
+                    "required": true,
+                    "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UdsSecurityAccessRequest" } } }
+                },
+                "responses": {
+                    "200": ok_ref("#/components/schemas/UdsSecurityAccessResponse"),
+                    "400": err_default(),
+                    "404": err_default()
+                }
+            }
+        }
+    })
+}
+
+// ── F18: UCM Campaign paths (AUTOSAR R24-11) ───────────────────────────
+
+fn ucm_paths() -> serde_json::Value {
+    serde_json::json!({
+        "/ucm/campaigns": {
+            "get": {
+                "tags": ["UCM"],
+                "summary": "List UCM campaigns",
+                "operationId": "list_ucm_campaigns",
+                "responses": {
+                    "200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object", "properties": { "value": { "type": "array", "items": { "$ref": "#/components/schemas/UcmCampaign" } } } } } } },
+                    "4XX": err_default()
+                }
+            },
+            "post": {
+                "tags": ["UCM"],
+                "summary": "Create UCM campaign",
+                "operationId": "create_ucm_campaign",
+                "requestBody": {
+                    "required": true,
+                    "content": { "application/json": { "schema": { "type": "object", "required": ["name", "target_components"], "properties": { "name": { "type": "string" }, "target_components": { "type": "array", "items": { "type": "string" } } } } } }
+                },
+                "responses": {
+                    "201": ok_ref("#/components/schemas/UcmCampaign"),
+                    "400": err_default()
+                }
+            }
+        },
+        "/ucm/campaigns/{campaign_id}": {
+            "get": {
+                "tags": ["UCM"],
+                "summary": "Get UCM campaign detail",
+                "operationId": "get_ucm_campaign",
+                "responses": {
+                    "200": ok_ref("#/components/schemas/UcmCampaign"),
+                    "404": err_default()
+                }
+            }
+        },
+        "/ucm/campaigns/{campaign_id}/execute": {
+            "post": {
+                "tags": ["UCM"],
+                "summary": "Execute UCM campaign",
+                "operationId": "execute_ucm_campaign",
+                "responses": {
+                    "200": ok_ref("#/components/schemas/UcmCampaign"),
+                    "404": err_default()
+                }
+            }
+        },
+        "/ucm/campaigns/{campaign_id}/rollback": {
+            "post": {
+                "tags": ["UCM"],
+                "summary": "Rollback UCM campaign",
+                "operationId": "rollback_ucm_campaign",
+                "responses": {
+                    "200": ok_ref("#/components/schemas/UcmCampaign"),
+                    "404": err_default()
+                }
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -943,6 +1269,89 @@ mod tests {
 
         let spec = build_openapi_json_with_policy(&OfflineCapablePolicy, None);
         assert_eq!(spec["info"]["x-sovd-applicability"]["offline"], true);
+    }
+
+    // ── F15-F18 CDF contract tests ─────────────────────────────────────
+
+    #[test]
+    fn contract_f15_rxswin_paths_present() {
+        let spec = build_openapi_json();
+        let paths = spec["paths"].as_object().unwrap();
+        let rxswin_paths = ["/rxswin", "/rxswin/report", "/rxswin/{component_id}", "/update-provenance"];
+        for path in &rxswin_paths {
+            assert!(paths.contains_key(*path), "RXSWIN path missing: {path}");
+        }
+        assert!(paths["/rxswin"]["get"].is_object(), "/rxswin GET missing");
+        assert!(paths["/rxswin"]["x-sovd-name"].is_string(), "/rxswin x-sovd-name missing");
+    }
+
+    #[test]
+    fn contract_f16_tara_paths_present() {
+        let spec = build_openapi_json();
+        let paths = spec["paths"].as_object().unwrap();
+        let tara_paths = ["/tara/assets", "/tara/threats", "/tara/export"];
+        for path in &tara_paths {
+            assert!(paths.contains_key(*path), "TARA path missing: {path}");
+        }
+    }
+
+    #[test]
+    fn contract_f17_uds_security_paths_present() {
+        let spec = build_openapi_json();
+        let paths = spec["paths"].as_object().unwrap();
+        assert!(
+            paths.contains_key("/x-uds/components/{component_id}/security-levels"),
+            "UDS security-levels path missing"
+        );
+        assert!(
+            paths.contains_key("/x-uds/components/{component_id}/security-access"),
+            "UDS security-access path missing"
+        );
+        let sa = &paths["/x-uds/components/{component_id}/security-access"];
+        assert!(sa["post"].is_object(), "security-access POST missing");
+        assert!(sa["post"]["requestBody"].is_object(), "security-access requestBody missing");
+    }
+
+    #[test]
+    fn contract_f18_ucm_paths_present() {
+        let spec = build_openapi_json();
+        let paths = spec["paths"].as_object().unwrap();
+        let ucm_paths = [
+            "/ucm/campaigns",
+            "/ucm/campaigns/{campaign_id}",
+            "/ucm/campaigns/{campaign_id}/execute",
+            "/ucm/campaigns/{campaign_id}/rollback",
+        ];
+        for path in &ucm_paths {
+            assert!(paths.contains_key(*path), "UCM path missing: {path}");
+        }
+        assert!(paths["/ucm/campaigns"]["get"].is_object(), "UCM campaigns GET missing");
+        assert!(paths["/ucm/campaigns"]["post"].is_object(), "UCM campaigns POST missing");
+    }
+
+    #[test]
+    fn contract_f15_f18_schemas_present() {
+        let spec = build_openapi_json();
+        let schemas = spec["components"]["schemas"].as_object().unwrap();
+        let f15_f18_schemas = [
+            "RxswinEntry", "RxswinReport", "UpdateProvenanceEntry",
+            "TaraAsset", "TaraThreatEntry", "TaraExport",
+            "UdsSecurityLevel", "UdsSecurityAccessRequest", "UdsSecurityAccessResponse",
+            "UcmCampaign",
+        ];
+        for schema in &f15_f18_schemas {
+            assert!(schemas.contains_key(*schema), "F15-F18 schema missing: {schema}");
+        }
+    }
+
+    #[test]
+    fn contract_f15_f18_tags_present() {
+        let spec = build_openapi_json();
+        let tags = spec["tags"].as_array().unwrap();
+        let tag_names: Vec<&str> = tags.iter().filter_map(|t| t["name"].as_str()).collect();
+        for expected in &["RXSWIN", "TARA", "UDS-Security", "UCM"] {
+            assert!(tag_names.contains(expected), "Tag missing: {expected}");
+        }
     }
 
     #[test]

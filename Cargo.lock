@@ -603,7 +603,7 @@ checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
 name = "demo-ecu"
-version = "0.13.0-beta"
+version = "0.17.0-rc"
 dependencies = [
  "axum 0.8.8",
  "chrono",
@@ -1586,7 +1586,7 @@ dependencies = [
 
 [[package]]
 name = "native-comm-someip"
-version = "0.13.0-beta"
+version = "0.17.0-rc"
 dependencies = [
  "cc",
  "libc",
@@ -1600,7 +1600,7 @@ dependencies = [
 
 [[package]]
 name = "native-core"
-version = "0.13.0-beta"
+version = "0.17.0-rc"
 dependencies = [
  "async-trait",
  "axum 0.8.8",
@@ -1627,7 +1627,7 @@ dependencies = [
 
 [[package]]
 name = "native-health"
-version = "0.13.0-beta"
+version = "0.17.0-rc"
 dependencies = [
  "serde_json",
  "sysinfo",
@@ -1636,7 +1636,7 @@ dependencies = [
 
 [[package]]
 name = "native-interfaces"
-version = "0.13.0-beta"
+version = "0.17.0-rc"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1656,7 +1656,7 @@ dependencies = [
 
 [[package]]
 name = "native-sovd"
-version = "0.13.0-beta"
+version = "0.17.0-rc"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1675,9 +1675,12 @@ dependencies = [
  "native-core",
  "native-health",
  "native-interfaces",
+ "parking_lot 0.12.5",
+ "rand 0.8.5",
  "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "subtle",
  "tokio",
  "tokio-stream",
@@ -1745,7 +1748,7 @@ checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
 name = "opensovd-native-server"
-version = "0.13.0-beta"
+version = "0.17.0-rc"
 dependencies = [
  "axum 0.8.8",
  "axum-server",
@@ -1759,8 +1762,10 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "parking_lot 0.12.5",
  "rustls",
  "rustls-pemfile",
+ "sd-notify",
  "serde",
  "serde_json",
  "tempfile",
@@ -2463,6 +2468,15 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "sd-notify"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b943eadf71d8b69e661330cb0e2656e31040acf21ee7708e2c238a0ec6af2bf4"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "semver"

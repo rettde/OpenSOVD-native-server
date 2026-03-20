@@ -4,7 +4,7 @@
 
 [package]
 name = "native-sovd"
-version = "0.13.0-beta"
+version = "0.17.0-rc"
 edition.workspace = true
 license.workspace = true
 homepage.workspace = true
@@ -37,8 +37,11 @@ chrono = { workspace = true }
 jsonwebtoken = { workspace = true }
 base64 = { workspace = true }
 hex = { workspace = true }
+sha2 = { workspace = true }
 async-trait = { workspace = true }
 dashmap = { workspace = true }
+parking_lot = { workspace = true }
+rand = { workspace = true }
 futures = { workspace = true }
 async-stream = { workspace = true }
 tokio-stream = { workspace = true, features = ["time"] }

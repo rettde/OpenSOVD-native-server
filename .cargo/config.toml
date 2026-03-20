@@ -1,17 +1,44 @@
-# ARM cross-compilation targets for HPC platforms
-# Uncomment the appropriate target for your platform
+# ─────────────────────────────────────────────────────────────────────────────
+# Cross-compilation targets for automotive HPC / IVI platforms
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# IMPORTANT: Do NOT set `target-cpu=native` under [build] — it injects host
+# CPU features (e.g. AVX on x86_64) into the binary, causing "Illegal
+# Instruction" crashes when deployed on ARM targets.
+#
+# Instead, set target-cpu per-target so it only applies when that target is
+# actually selected.
 
-# AArch64 (64-bit ARM) - most common for HPC ECUs
-# [target.aarch64-unknown-linux-gnu]
-# linker = "aarch64-linux-gnu-gcc"
+# ── NVIDIA DRIVE AGX / Orin (DRIVE OS 6.x, Linux aarch64) ───────────────
+[target.aarch64-unknown-linux-gnu]
+# linker = "aarch64-linux-gnu-gcc"          # uncomment for cross-compilation
+rustflags = ["-C", "target-cpu=cortex-a78ae"]   # Orin SoC cores
 
-# ARMv7 (32-bit ARM) - older ECU platforms
+# ── NVIDIA DRIVE AGX (static musl — minimal container / initrd) ─────────
+[target.aarch64-unknown-linux-musl]
+# linker = "aarch64-linux-musl-gcc"         # uncomment for cross-compilation
+rustflags = ["-C", "target-cpu=cortex-a78ae", "-C", "target-feature=+crt-static"]
+
+# ── Android Automotive OS (AAOS IVI, NDK r27+) ──────────────────────────
+[target.aarch64-linux-android]
+# linker = "aarch64-linux-android35-clang"  # NDK toolchain (API 35 = Android 15)
+rustflags = ["-C", "target-cpu=cortex-a76"]
+
+# ── ARMv7 (32-bit ARM) — older ECU platforms ────────────────────────────
 # [target.armv7-unknown-linux-gnueabihf]
 # linker = "arm-linux-gnueabihf-gcc"
+# rustflags = ["-C", "target-cpu=cortex-a53"]
 
-# Default build target (uncomment for cross-compilation)
+# ── Host development (uncomment ONE for native builds) ───────────────────
+# [target.x86_64-apple-darwin]
+# rustflags = ["-C", "target-cpu=native"]
+#
+# [target.aarch64-apple-darwin]
+# rustflags = ["-C", "target-cpu=native"]
+#
+# [target.x86_64-unknown-linux-gnu]
+# rustflags = ["-C", "target-cpu=native"]
+
+# ── Default build target (uncomment for permanent cross-compilation) ─────
 # [build]
 # target = "aarch64-unknown-linux-gnu"
-
-[build]
-rustflags = ["-C", "target-cpu=native"]

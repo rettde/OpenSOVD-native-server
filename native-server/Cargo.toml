@@ -4,7 +4,7 @@
 
 [package]
 name = "opensovd-native-server"
-version = "0.13.0-beta"
+version = "0.17.0-rc"
 edition.workspace = true
 license.workspace = true
 homepage.workspace = true
@@ -36,6 +36,7 @@ figment = { workspace = true, features = ["toml", "env"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 dashmap = { workspace = true }
+parking_lot = { workspace = true }
 toml = { workspace = true }
 
 # ── Optional: OpenTelemetry OTLP export (A2.4) ──────────────────────────────
@@ -43,6 +44,9 @@ opentelemetry = { workspace = true, optional = true }
 opentelemetry_sdk = { workspace = true, optional = true }
 opentelemetry-otlp = { workspace = true, optional = true }
 tracing-opentelemetry = { workspace = true, optional = true }
+
+# ── Optional: systemd sd_notify watchdog (F19) ──────────────────────────────
+sd-notify = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -59,3 +63,5 @@ otlp = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "tracing-ope
 vault = ["native-core/vault"]
 # Enable WebSocket bridge transport
 ws-bridge = ["native-core/ws-bridge"]
+# Enable systemd sd_notify (READY=1, WATCHDOG=1) — Linux HPC deployment
+systemd = ["sd-notify"]

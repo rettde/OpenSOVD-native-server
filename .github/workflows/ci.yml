@@ -61,6 +61,38 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --workspace
 
+  build-systemd:
+    name: Build (systemd feature)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p opensovd-native-server --features systemd
+      - run: cargo clippy -p opensovd-native-server --features systemd -- -D warnings
+
+  msrv:
+    name: MSRV (1.88)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace
+
+  cross-check:
+    name: Cross-compile check (aarch64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cross-linker
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+      - run: cargo check --workspace --target aarch64-unknown-linux-gnu
+
   sovd-cdf-validate:
     name: SOVD CDF Validation (DSA)
     runs-on: ubuntu-latest
@@ -85,6 +117,17 @@ jobs:
       # ── Validate CDF against SOVD standard rules ────────────────────
       - name: Redocly lint (SOVD CDF rules)
         run: npx @redocly/cli lint --config .redocly.yaml openapi-spec.json
+
+  security-audit:
+    name: Security Audit (cargo-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Run cargo-audit
+        run: cargo audit
 
   sbom:
     name: SBOM (CycloneDX)

@@ -7,6 +7,129 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.17.0-rc] — 2026-03-20
+
+### Code Review Fixes
+- All critical, medium, and low priority issues from v0.16.0 code review addressed
+- **16 new regression tests** covering every review fix (E1–E5, C1–C4, C6, D4, P1–P4)
+- **Test coverage:** 81.4% lines / 73.9% functions (484 tests total)
+
+### Internal
+- All 7 workspace crates bumped to **0.17.0-rc**
+- `cargo-llvm-cov` coverage tooling integrated
+
+---
+
+## [0.16.0] — 2026-03-20
+
+### Security Fixes (Critical)
+- **E1 — CSPRNG for UDS Security Access seeds (ISO 14229 §9):** Replaced predictable `SystemTime`-based seed generator (`rand_seed()`) with cryptographically secure `rand::thread_rng().gen()` (OS-level CSPRNG). Previous implementation used truncated nanosecond timestamps, making seeds guessable from response timing. New dependency: `rand = "0.8"`.
+
+### Performance Fixes (Critical)
+- **P1 — FIFO eviction for bounded DashMap stores:** Replaced non-deterministic DashMap iteration eviction in `evict_and_insert()` with proper FIFO (insertion-order) eviction using a companion `VecDeque<String>` queue. Affected stores: `execution_store` (operation executions) and `proximity_store` (proximity challenges). Previously, `DashMap::iter().next()` could evict recent entries while keeping stale ones, since DashMap iteration order is shard-dependent and non-deterministic.
+
+### Correctness Fixes (Medium)
+- **E2 — Stable ETag hashing:** Replaced `DefaultHasher` (SipHash, unstable across Rust versions) with SHA-256 (truncated to 16 hex chars) for deterministic cross-version ETags in `read_data`. New dependency: `sha2` (workspace).
+- **E3 — Compliance evidence reflects actual config:** `compliance_evidence` endpoint now reports `authEnabled` from runtime config instead of hardcoded `true`. Removed misleading `mTlsCapable: true`. Added `auth_enabled: bool` field to `SecurityState`.
+- **E4 — Caller identity in disconnect:** `disconnect_component` now extracts `CallerIdentity` from the request instead of hardcoding `"anonymous"` in audit log entries, matching the pattern used in `connect_component`.
+- **C2/C3 — Scoped execution lookups:** `get_execution` and `cancel_execution` now verify that the execution belongs to the requested `component_id` and `operation_id`, preventing cross-component data access through guessed execution IDs.
+
+### Performance Fixes (Medium)
+- **P2 — Cached OData serialization:** `apply_odata_filter` pre-serializes items once (O(N)) instead of per-comparison. `apply_odata_orderby` pre-extracts sort keys (O(N) serializations) instead of O(N log N × 2) inside the sort closure.
+- **P3 — Cached canary env var:** `canary_routing_middleware` now reads `SOVD_DEPLOYMENT_LABEL` once via `OnceLock` instead of calling `std::env::var()` on every request.
+- **P4 — No history writes on fault reads:** Removed `guarded_history_fault()` calls from `list_faults` (GET). History is recorded only on state-changing operations (`clear_faults` DELETE), avoiding O(faults × poll_rate) duplicate writes.
+
+### Code Quality (Medium)
+- **C1 — Merged component query params:** `list_components` now uses a single `ComponentListParams` struct instead of two separate `Query` extractors (`PaginationParams` + `VariantFilter`), avoiding double query-string parsing.
+
+### Observability (Low)
+- **E5 — Audit suppression logging:** `guarded_audit` now emits a `tracing::debug!` event when the audit feature flag is disabled, making suppressed audit-worthy events observable in diagnostic logs instead of silently dropped.
+
+### Code Quality (Low)
+- **C4 — Configurable store capacity:** Replaced hardcoded `MAX_ENTRIES = 10_000` in `evict_and_insert` with `RuntimeState.max_store_entries`, allowing operators to tune bounded-store capacity per deployment.
+- **C6 — Component validation in proximity GET:** `get_proximity_challenge` now validates that the component in the URL path actually exists instead of ignoring the `_component_id` path segment.
+- **D4 — `deny(unsafe_code)` workspace-wide:** Added `[workspace.lints.rust] unsafe_code = "deny"` so all crates reject `unsafe` blocks by default.
+
+### Internal
+- All 7 workspace crates bumped to **0.16.0**
+
+---
+
+## [0.15.0] — 2026-03-20
+
+### Phase 3 Future Work — RXSWIN Tracking, TARA, UDS Security Access, UCM Campaigns
+
+#### F15: UNECE R156 RXSWIN-Tracking
+- **`RxswinEntry`** — per-component RXSWIN identifier with authority, approval ref, software version mapping
+- **`RxswinReport`** — vehicle-level aggregated RXSWIN report (VIN, timestamp, all entries)
+- **`UpdateProvenanceEntry`** — update provenance log recording origin and integrity of each software update (UNECE R156 §7.1)
+- Endpoints: `GET /sovd/v1/rxswin`, `GET /sovd/v1/rxswin/report`, `GET /sovd/v1/rxswin/{component_id}`, `GET /sovd/v1/update-provenance`
+- DashMap-backed RXSWIN store + RwLock provenance log in `RuntimeState`
+- **5 tests** (empty collection, report, not found, store+retrieve, provenance empty)
+
+#### F16: ISO/SAE 21434 TARA — Threat Analysis & Risk Assessment
+- **`TaraAsset`** — asset inventory entry (category, component IDs, relevance level)
+- **`TaraThreatEntry`** — threat entry with STRIDE category, affected assets, residual risk, mitigation, status
+- **`TaraExport`** — full TARA export document (ISO/SAE 21434 §15 work product) with summary statistics
+- **`TaraThreatStatus`** enum: `identified`, `mitigated`, `accepted`, `transferred`
+- Endpoints: `GET /sovd/v1/tara/assets`, `GET /sovd/v1/tara/threats`, `GET /sovd/v1/tara/export`
+- **5 tests** (empty assets, empty threats, empty export, populated export, status variants)
+
+#### F17: ISO 14229 UDS Security Access (0x27)
+- **`UdsSecurityLevel`** — security level descriptor with protected services list
+- **`UdsSecurityAccessRequest`** / **`UdsSecurityAccessResponse`** — seed/key protocol types
+- Standard 3-level security model: Workshop (0x01), Engineering (0x03), OEM (0x05)
+- Endpoints: `GET /sovd/v1/x-uds/components/{id}/security-levels`, `POST /sovd/v1/x-uds/components/{id}/security-access`
+- Audit trail integration for both requestSeed and sendKey phases
+- **7 tests** (list levels, 404, requestSeed, sendKey granted, sendKey denied, invalid phase, serialization)
+
+#### F18: AUTOSAR UCM — Update Campaign Manager
+- **`UcmCampaign`** — campaign with lifecycle status, target components, progress, transfer states
+- **`UcmCampaignStatus`** enum: 9 states (created → transferring → processing → activating → activated; rollingBack → rolledBack; failed, cancelled)
+- **`UcmTransferState`** / **`UcmTransferPhase`** — per-component transfer tracking (9 phases)
+- Endpoints: `GET/POST /sovd/v1/ucm/campaigns`, `GET /sovd/v1/ucm/campaigns/{id}`, `POST .../execute`, `POST .../rollback`
+- Full lifecycle orchestration: create → execute (sets processing + transfer states) → rollback
+- Audit trail integration for campaign create, execute, rollback
+- **8 tests** (empty, create, empty targets rejected, lifecycle, not found, execute not found, status variants, transfer phase variants)
+
+### Fixes
+- **MSRV corrected:** `rust-version` bumped from `1.75` to `1.88` — matches actual dependency floor (`time 0.3.47` requires 1.88.0). README badge and prerequisites updated.
+- **Cross-compilation fix:** Removed global `target-cpu=native` from `.cargo/config.toml` — caused `Illegal Instruction` crashes when cross-compiled binaries were deployed on ARM targets (DRIVE AGX, AAOS IVI). CPU tuning is now per-target (`cortex-a78ae` for Orin, `cortex-a76` for AAOS).
+
+### Deployment (F19)
+- **`deploy/opensovd-native.service`** — production-ready systemd unit with `Type=notify`, `WatchdogSec=30`, resource limits (`MemoryMax=256M`, `CPUQuota=50%`), security hardening (`NoNewPrivileges`, `ProtectSystem=strict`)
+- **`systemd` feature flag** (`--features systemd`) — enables sd_notify integration:
+  - `READY=1` sent after listener socket is bound
+  - `WATCHDOG=1` heartbeat at `WatchdogSec/2` interval (reads `WATCHDOG_USEC` from environment)
+  - `STOPPING=1` sent on graceful shutdown
+  - Without feature or on non-Linux: all calls are compile-time no-ops
+- New module: `native-server/src/watchdog.rs`
+- New dependency: `sd-notify = "0.4"` (optional, workspace)
+
+### OpenAPI CDF (Capability Description File)
+- F15-F18 paths added to `openapi.rs`: `/rxswin`, `/rxswin/report`, `/rxswin/{component_id}`, `/update-provenance`, `/tara/assets`, `/tara/threats`, `/tara/export`, `/x-uds/components/{component_id}/security-levels`, `/x-uds/components/{component_id}/security-access`, `/ucm/campaigns`, `/ucm/campaigns/{campaign_id}`, `/ucm/campaigns/{campaign_id}/execute`, `/ucm/campaigns/{campaign_id}/rollback`
+- 10 new schemas: `RxswinEntry`, `RxswinReport`, `UpdateProvenanceEntry`, `TaraAsset`, `TaraThreatEntry`, `TaraExport`, `UdsSecurityLevel`, `UdsSecurityAccessRequest`, `UdsSecurityAccessResponse`, `UcmCampaign`
+- 4 new tags: `RXSWIN`, `TARA`, `UDS-Security`, `UCM`
+- **7 new CDF contract tests** (F15 paths, F16 paths, F17 paths+requestBody, F18 paths+methods, F15-F18 schemas, F15-F18 tags)
+
+### CI Hardening
+- **`build-systemd`** job — build + clippy with `--features systemd`
+- **`msrv`** job — `cargo check` with Rust 1.88.0 toolchain
+- **`cross-check`** job — `cargo check --target aarch64-unknown-linux-gnu` with cross-linker
+
+### Documentation
+- **README** endpoint table updated: +5 core endpoints (system-info, audit, audit/export, compliance-evidence, openapi.json), +5 software packages, +4 RXSWIN, +3 TARA, +2 UDS Security, +5 UCM
+- **README** feature flags table: `systemd` feature added
+- **[HowTo: Deploy on NVIDIA DRIVE AGX](docs/howto-deploy-nvidia-drive.md)** — cross-compilation, Docker container, systemd service, in-vehicle config
+- **[HowTo: Deploy on AAOS IVI](docs/howto-deploy-aaos.md)** — NDK toolchain, ADB deployment, Android init `.rc` service, SELinux policy, Vendor APEX
+
+### Stats
+- **476 tests** (workspace), all passing
+- Clippy pedantic clean (workspace)
+- All 7 crates at 0.15.0
+
+---
+
 ## [0.13.0-beta] — 2026-03-20
 
 ### Phase 2 Future Work — Prometheus Config, Vault Secrets, WebSocket Bridge, Firmware Signing, mTLS

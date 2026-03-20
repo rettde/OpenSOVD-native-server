@@ -1,0 +1,73 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# OpenSOVD-native-server — systemd service unit
+#
+# Install:
+#   sudo cp deploy/opensovd-native.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now opensovd-native
+#
+# Logs:
+#   journalctl -u opensovd-native -f
+#
+# For NVIDIA DRIVE AGX / Linux HPC deployment.
+# See docs/howto-deploy-nvidia-drive.md for full guide.
+# ─────────────────────────────────────────────────────────────────────────────
+
+[Unit]
+Description=OpenSOVD Native Diagnostic Server (ISO 17978-3)
+Documentation=https://github.com/eclipse-opensovd/OpenSOVD-native-server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/opt/opensovd/opensovd-native-server --config /opt/opensovd/config.toml
+
+# ── Lifecycle ────────────────────────────────────────────────────────────
+# Server sends READY=1 via sd_notify when the listening socket is bound.
+# Graceful shutdown: SIGTERM → 10s drain → SIGKILL.
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=15
+
+# ── Watchdog ─────────────────────────────────────────────────────────────
+# Server sends WATCHDOG=1 every WatchdogSec/2.  If no heartbeat arrives
+# within WatchdogSec, systemd restarts the process — critical for ADAS.
+WatchdogSec=30
+
+# ── Resource limits ──────────────────────────────────────────────────────
+# Tune these for your HPC.  Defaults are conservative for a diagnostic
+# server that is NOT on the safety-critical data path.
+MemoryMax=256M
+MemoryHigh=192M
+CPUQuota=50%
+LimitNOFILE=65536
+TasksMax=128
+
+# ── Security hardening ───────────────────────────────────────────────────
+# Principle of least privilege — drop everything we don't need.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/opensovd/data
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+
+# ── Logging ──────────────────────────────────────────────────────────────
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=opensovd-native
+
+# ── Environment ──────────────────────────────────────────────────────────
+Environment=RUST_LOG=info
+# For structured JSON logs (recommended for log aggregation):
+# Environment=RUST_LOG=info OPENSOVD_LOG_FORMAT=json
+
+[Install]
+WantedBy=multi-user.target

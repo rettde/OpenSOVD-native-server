@@ -774,6 +774,299 @@ pub struct SovdAuditEntry {
     pub hash: Option<String>,
 }
 
+// ── RXSWIN Tracking (UNECE R156, F15) ─────────────────────────────────
+
+/// RXSWIN (Rx Software Identification Number) entry per component.
+///
+/// UNECE R156 requires every type-approved vehicle to carry a list of
+/// RXSWINs — unique identifiers linking each software component to its
+/// regulatory approval. This struct captures one such mapping.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RxswinEntry {
+    /// Component this RXSWIN belongs to
+    #[serde(rename = "componentId")]
+    pub component_id: String,
+    /// The RXSWIN identifier string (assigned by approval authority)
+    pub rxswin: String,
+    /// Software version currently mapped to this RXSWIN
+    #[serde(rename = "softwareVersion")]
+    pub software_version: String,
+    /// ISO 8601 timestamp of last RXSWIN update
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+    /// Approval authority (e.g. "KBA", "VCA", "NHTSA")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authority: Option<String>,
+    /// Approval reference number
+    #[serde(skip_serializing_if = "Option::is_none", rename = "approvalRef")]
+    pub approval_ref: Option<String>,
+}
+
+/// Vehicle-level RXSWIN report — aggregates all component RXSWINs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RxswinReport {
+    /// Vehicle identification number
+    pub vin: String,
+    /// ISO 8601 timestamp when this report was generated
+    #[serde(rename = "generatedAt")]
+    pub generated_at: String,
+    /// All RXSWIN entries for this vehicle
+    pub entries: Vec<RxswinEntry>,
+    /// Total number of tracked software components
+    #[serde(rename = "totalComponents")]
+    pub total_components: usize,
+}
+
+/// Update provenance log entry — records the origin and integrity of each
+/// software update applied to the vehicle (UNECE R156 §7.1).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateProvenanceEntry {
+    /// Unique identifier for this provenance record
+    pub id: String,
+    /// Component that was updated
+    #[serde(rename = "componentId")]
+    pub component_id: String,
+    /// Previous software version
+    #[serde(rename = "previousVersion")]
+    pub previous_version: String,
+    /// New software version after update
+    #[serde(rename = "newVersion")]
+    pub new_version: String,
+    /// ISO 8601 timestamp of the update
+    #[serde(rename = "appliedAt")]
+    pub applied_at: String,
+    /// Update method: "ota", "workshop", "factory"
+    #[serde(rename = "updateMethod")]
+    pub update_method: String,
+    /// SHA-256 digest of the applied package
+    #[serde(skip_serializing_if = "Option::is_none", rename = "packageDigest")]
+    pub package_digest: Option<String>,
+    /// Whether the update was successful
+    pub success: bool,
+    /// RXSWIN after the update (if applicable)
+    #[serde(skip_serializing_if = "Option::is_none", rename = "rxswinAfter")]
+    pub rxswin_after: Option<String>,
+}
+
+// ── TARA (ISO/SAE 21434, F16) ─────────────────────────────────────────
+
+/// Asset inventory entry for Threat Analysis and Risk Assessment (TARA).
+///
+/// ISO/SAE 21434 §9 requires an asset inventory as input to TARA.
+/// Each entry describes a cybersecurity-relevant asset in the vehicle.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaraAsset {
+    /// Unique asset identifier
+    pub id: String,
+    /// Human-readable asset name
+    pub name: String,
+    /// Asset category: "ecu", "communication_channel", "data", "function", "interface"
+    pub category: String,
+    /// Component(s) this asset belongs to
+    #[serde(rename = "componentIds")]
+    pub component_ids: Vec<String>,
+    /// Cybersecurity relevance level: "high", "medium", "low"
+    pub relevance: String,
+    /// Optional description
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// Threat entry for TARA export.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaraThreatEntry {
+    /// Unique threat identifier (e.g. "T-001")
+    pub id: String,
+    /// Threat name
+    pub name: String,
+    /// STRIDE category: "spoofing", "tampering", "repudiation",
+    /// "informationDisclosure", "denialOfService", "elevationOfPrivilege"
+    pub category: String,
+    /// Affected asset IDs
+    #[serde(rename = "affectedAssets")]
+    pub affected_assets: Vec<String>,
+    /// Risk level after mitigation: "high", "medium", "low", "negligible"
+    #[serde(rename = "residualRisk")]
+    pub residual_risk: String,
+    /// Mitigation description
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mitigation: Option<String>,
+    /// Whether this threat has been accepted / mitigated
+    pub status: TaraThreatStatus,
+}
+
+/// TARA threat status
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TaraThreatStatus {
+    Identified,
+    Mitigated,
+    Accepted,
+    Transferred,
+}
+
+/// Full TARA export document (ISO/SAE 21434 §15 — work product).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaraExport {
+    /// ISO 8601 timestamp
+    #[serde(rename = "generatedAt")]
+    pub generated_at: String,
+    /// Vehicle / system identifier
+    #[serde(rename = "systemId")]
+    pub system_id: String,
+    /// Asset inventory
+    pub assets: Vec<TaraAsset>,
+    /// Threat entries
+    pub threats: Vec<TaraThreatEntry>,
+    /// Summary statistics
+    pub summary: TaraSummary,
+}
+
+/// TARA summary statistics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaraSummary {
+    #[serde(rename = "totalAssets")]
+    pub total_assets: usize,
+    #[serde(rename = "totalThreats")]
+    pub total_threats: usize,
+    #[serde(rename = "mitigatedThreats")]
+    pub mitigated_threats: usize,
+    #[serde(rename = "highRiskThreats")]
+    pub high_risk_threats: usize,
+}
+
+// ── UDS Security Access (ISO 14229 §9, F17) ──────────────────────────
+
+/// UDS Security Access level descriptor (ISO 14229 service 0x27).
+///
+/// Each security level protects a set of UDS services that require
+/// authentication before execution (e.g. ECU flashing, coding).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UdsSecurityLevel {
+    /// Security level number (odd = requestSeed, even = sendKey)
+    pub level: u8,
+    /// Human-readable name (e.g. "Level 1 — Workshop", "Level 3 — Engineering")
+    pub name: String,
+    /// Description of what this level protects
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Whether this level is currently unlocked
+    pub unlocked: bool,
+    /// Services protected by this level (UDS SIDs, hex strings)
+    #[serde(rename = "protectedServices", default, skip_serializing_if = "Vec::is_empty")]
+    pub protected_services: Vec<String>,
+}
+
+/// UDS Security Access request (seed/key protocol).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UdsSecurityAccessRequest {
+    /// Security level to request (odd number for requestSeed)
+    pub level: u8,
+    /// Phase: "requestSeed" or "sendKey"
+    pub phase: String,
+    /// Key bytes (hex-encoded) — only for "sendKey" phase
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+}
+
+/// UDS Security Access response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UdsSecurityAccessResponse {
+    /// Security level
+    pub level: u8,
+    /// Phase completed
+    pub phase: String,
+    /// Seed bytes (hex-encoded) — only for "requestSeed" phase
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seed: Option<String>,
+    /// Whether access was granted (only for "sendKey" phase)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub granted: Option<bool>,
+    /// Remaining attempts before lockout (if applicable)
+    #[serde(skip_serializing_if = "Option::is_none", rename = "remainingAttempts")]
+    pub remaining_attempts: Option<u8>,
+}
+
+// ── UCM — Update Campaign Manager (AUTOSAR R24-11, F18) ──────────────
+
+/// Update campaign managed by the AUTOSAR UCM (Update & Config Management).
+///
+/// A campaign orchestrates the update of one or more components in a
+/// coordinated sequence with dependency checking and rollback support.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UcmCampaign {
+    /// Unique campaign identifier
+    pub id: String,
+    /// Campaign name
+    pub name: String,
+    /// Campaign lifecycle status
+    pub status: UcmCampaignStatus,
+    /// Target component IDs (ordered update sequence)
+    #[serde(rename = "targetComponents")]
+    pub target_components: Vec<String>,
+    /// ISO 8601 creation timestamp
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    /// ISO 8601 last status change
+    #[serde(skip_serializing_if = "Option::is_none", rename = "updatedAt")]
+    pub updated_at: Option<String>,
+    /// Overall progress (0–100)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress: Option<u8>,
+    /// Error detail (when status == Failed)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// Per-component transfer states
+    #[serde(rename = "transferStates", default, skip_serializing_if = "Vec::is_empty")]
+    pub transfer_states: Vec<UcmTransferState>,
+}
+
+/// UCM campaign lifecycle status
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UcmCampaignStatus {
+    Created,
+    Transferring,
+    Processing,
+    Activating,
+    Activated,
+    RollingBack,
+    RolledBack,
+    Failed,
+    Cancelled,
+}
+
+/// Per-component transfer state within a UCM campaign.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UcmTransferState {
+    /// Target component ID
+    #[serde(rename = "componentId")]
+    pub component_id: String,
+    /// Package being transferred/installed
+    #[serde(rename = "packageId")]
+    pub package_id: String,
+    /// Transfer state
+    pub state: UcmTransferPhase,
+    /// Progress within this component (0–100)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress: Option<u8>,
+}
+
+/// UCM transfer phase per component
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UcmTransferPhase {
+    Idle,
+    Transferring,
+    Transferred,
+    Processing,
+    Processed,
+    Activating,
+    Activated,
+    RollingBack,
+    Failed,
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

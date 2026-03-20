@@ -1,31 +1,62 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# OpenSOVD-native-server Configuration
+# OpenSOVD-native-server — Complete Configuration Reference
 #
 # Architecture:
 #   Client → SOVD Server → ComponentRouter (Gateway)
 #                               └── SovdHttpBackend → external backends via REST
 #
 # Backends are tried in order; the first that handles a component wins.
+#
+# All values shown are defaults unless marked otherwise.
+# Commented-out keys show available options that are disabled by default.
+# Environment override: SOVD_<SECTION>__<KEY> (double underscore), e.g.
+#   SOVD_SERVER__PORT=9090  SOVD_AUTH__ENABLED=true
 # ─────────────────────────────────────────────────────────────────────────────
+
+# ═════════════════════════════════════════════════════════════════════════════
+# SERVER — Listener, TLS, mTLS
+# ═════════════════════════════════════════════════════════════════════════════
 
 [server]
 host = "0.0.0.0"
 port = 8080
 
-[someip]
-application_name = "opensovd-native-server"
+# ── TLS (HTTPS) — uncomment both to enable ────────────────────────────────
+# cert_path = "/etc/sovd/tls/server.crt"    # PEM certificate
+# key_path  = "/etc/sovd/tls/server.key"    # PEM private key
+
+# ── Mutual TLS (mTLS) — requires cert_path + key_path above ──────────────
+# client_ca_path = "/etc/sovd/tls/client-ca.crt"   # CA that signed client certs
+
+# ═════════════════════════════════════════════════════════════════════════════
+# LOGGING — Level, format, OpenTelemetry
+# ═════════════════════════════════════════════════════════════════════════════
 
 [logging]
-level = "info"
+level = "info"                        # trace | debug | info | warn | error
+# format = "text"                     # "text" (human-readable) | "json" (SIEM-ready)
+# otlp_endpoint = "http://localhost:4317"   # OTLP gRPC endpoint (requires `otlp` feature)
 
-# ── Authentication (disabled by default) ───────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# AUTHENTICATION — API key, JWT, OIDC, CORS
+# ═════════════════════════════════════════════════════════════════════════════
+
 [auth]
 enabled = false
 # api_key = "my-secret-api-key-change-me"
-# jwt_secret = "my-jwt-hmac-secret"
-# jwt_algorithm = "HS256"
-# jwt_issuer = "opensovd-native-server"
+# jwt_secret = "my-jwt-hmac-secret"          # HS256 secret or RS256 public key path
+# jwt_algorithm = "HS256"                    # "HS256" | "RS256"
+# jwt_issuer = "opensovd-native-server"      # validate `iss` claim
+# oidc_issuer_url = "https://auth.example.com/realms/sovd"   # auto-discover JWKS
 # public_paths = ["/sovd/v1/", "/sovd/v1/health"]
+# cors_origins = ["https://diag.example.com"]   # empty = permissive (dev mode)
+
+# ═════════════════════════════════════════════════════════════════════════════
+# SOME/IP — COVESA vsomeip integration
+# ═════════════════════════════════════════════════════════════════════════════
+
+[someip]
+application_name = "opensovd-native-server"
 
 # ═════════════════════════════════════════════════════════════════════════════
 # BACKENDS — SOVD HTTP clients forwarding to external CDA / SOVD servers
@@ -46,6 +77,12 @@ enabled = false
 # api_prefix = "/sovd/v1"
 # timeout_secs = 10
 # component_ids = ["bms", "climate"]
+#
+# # mTLS to backend (F14):
+# # client_cert_path = "/etc/sovd/tls/backend-client.crt"
+# # client_key_path  = "/etc/sovd/tls/backend-client.key"
+# # ca_cert_path     = "/etc/sovd/tls/backend-ca.crt"
+# # danger_accept_invalid_certs = false
 
 # ── Example: Classic Diagnostic Adapter for legacy ECUs ───────────────────
 #
@@ -63,28 +100,47 @@ enabled = false
 # ── Rate Limiting ────────────────────────────────────────────────────────
 [rate_limit]
 enabled = false
-# max_requests = 100
-# window_secs = 60
+# max_requests = 100                  # requests per window per client
+# window_secs = 60                    # sliding window duration
 
 # ── Prometheus Metrics (F7) ──────────────────────────────────────────────
 [metrics]
 enabled = true
-# path = "/metrics"
+# path = "/metrics"                   # Prometheus scrape path
 
-# ── Cloud Bridge (F3) ───────────────────────────────────────────────────
+# ── Cloud Bridge (F3, A3.1) ─────────────────────────────────────────────
 [bridge]
 enabled = false
-# listen_addr = "127.0.0.1:9090"    # WebSocket listener (requires ws-bridge feature)
+# listen_addr = "127.0.0.1:9090"     # WebSocket listener (requires ws-bridge feature)
+
+# ── Multi-Tenant Isolation (A3.2) ───────────────────────────────────────
+# [tenant]
+# enabled = false
+# isolation = "strict"                # "strict" | "shared"
 
 # ── Persistent Storage (F1, requires `persist` feature) ─────────────────
 [storage]
-backend = "memory"                    # "memory" (default) | "sled"
+backend = "memory"                    # "memory" (default, volatile) | "sled" (persistent)
 # sled_path = "./data/sovd.sled"     # only used when backend = "sled"
 
 # ── Secret Provider (F4, Vault requires `vault` feature) ────────────────
 [secrets]
 provider = "env"                      # "env" (default) | "vault" | "static"
 # vault_addr = "http://vault:8200"
+# vault_token = ""                    # falls back to VAULT_TOKEN env var
 # vault_mount = "secret"
 # vault_path_prefix = "sovd/"
-# vault_cache_ttl_secs = 300
+# vault_cache_ttl_secs = 300          # cache TTL (5 min default)
+
+# ── Firmware Signature Verification (F12, ISO 24089) ────────────────────
+[firmware]
+verify = false                        # true = require Ed25519 signature on activate
+# public_key_hex = "aabbccdd..."     # 32-byte Ed25519 public key (hex-encoded)
+
+# ── DLT Logging (AUTOSAR DLT) ──────────────────────────────────────────
+# [dlt]
+# enabled = false
+
+# ── mDNS Service Advertising ───────────────────────────────────────────
+# [mdns]
+# enabled = false

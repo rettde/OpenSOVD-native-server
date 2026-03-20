@@ -159,8 +159,11 @@ async fn canary_routing_middleware(
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    // Server deployment label: from SOVD_DEPLOYMENT_LABEL env var, default "default"
-    let server_label = std::env::var("SOVD_DEPLOYMENT_LABEL").unwrap_or_else(|_| "default".into());
+    // Server deployment label: cached from SOVD_DEPLOYMENT_LABEL env var at first access
+    static LABEL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    let server_label = LABEL
+        .get_or_init(|| std::env::var("SOVD_DEPLOYMENT_LABEL").unwrap_or_else(|_| "default".into()))
+        .clone();
 
     // Check if client targets a specific deployment
     if let Some(target) = request.headers().get("x-deployment-target") {
@@ -263,7 +266,7 @@ impl<S: Send + Sync> axum::extract::FromRequestParts<S> for TenantId {
 
 // ── OData-style pagination (SOVD §5) ─────────────────────────────────────
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 struct PaginationParams {
     #[serde(rename = "$top")]
     top: Option<usize>,
@@ -334,6 +337,8 @@ fn paginate<T: Serialize + Clone>(
 }
 
 /// Parse and apply a simple OData $filter expression: `field eq 'value'`
+///
+/// Serializes each item to JSON once (not per-comparison) for O(N) performance.
 fn apply_odata_filter<T: Serialize + Clone>(
     items: Vec<T>,
     filter: &str,
@@ -348,30 +353,35 @@ fn apply_odata_filter<T: Serialize + Clone>(
     let field = parts[0];
     let value = parts[2].trim_matches('\'').trim_matches('"');
 
+    // Pre-serialize all items once, then zip with originals to filter
+    let json_items: Vec<Option<serde_json::Value>> = items
+        .iter()
+        .map(|item| serde_json::to_value(item).ok())
+        .collect();
+
     Ok(items
         .into_iter()
-        .filter(|item| {
-            if let Ok(json) = serde_json::to_value(item) {
-                if let Some(field_val) = json.get(field) {
-                    return match field_val {
-                        serde_json::Value::String(s) => s == value,
-                        serde_json::Value::Number(n) => {
-                            let s = n.to_string();
-                            s == value
-                        }
-                        serde_json::Value::Bool(b) => {
-                            (value == "true" && *b) || (value == "false" && !*b)
-                        }
-                        _ => false,
-                    };
-                }
-            }
-            false
+        .zip(json_items)
+        .filter(|(_, json)| {
+            json.as_ref()
+                .and_then(|j| j.get(field))
+                .is_some_and(|field_val| match field_val {
+                    serde_json::Value::String(s) => s == value,
+                    serde_json::Value::Number(n) => n.to_string() == value,
+                    serde_json::Value::Bool(b) => {
+                        (value == "true" && *b) || (value == "false" && !*b)
+                    }
+                    _ => false,
+                })
         })
+        .map(|(item, _)| item)
         .collect())
 }
 
 /// Parse and apply a simple OData $orderby expression: `field [asc|desc]`
+///
+/// Pre-extracts the sort key from each item (one serialization per item)
+/// instead of serializing twice per comparison inside the sort closure.
 fn apply_odata_orderby<T: Serialize + Clone>(
     items: &mut [T],
     orderby: &str,
@@ -384,20 +394,27 @@ fn apply_odata_orderby<T: Serialize + Clone>(
         return Err(bad_request("$orderby requires a field name"));
     }
 
-    items.sort_by(|a, b| {
-        let va = serde_json::to_value(a)
-            .ok()
-            .and_then(|j| j.get(field).cloned());
-        let vb = serde_json::to_value(b)
-            .ok()
-            .and_then(|j| j.get(field).cloned());
-        let cmp = cmp_json_values(va.as_ref(), vb.as_ref());
-        if desc {
-            cmp.reverse()
-        } else {
-            cmp
-        }
+    // Pre-extract sort keys: one serialization per item instead of O(N log N × 2)
+    let keys: Vec<Option<serde_json::Value>> = items
+        .iter()
+        .map(|item| {
+            serde_json::to_value(item)
+                .ok()
+                .and_then(|j| j.get(field).cloned())
+        })
+        .collect();
+
+    // Build index array, sort by pre-extracted keys, then reorder items in-place
+    let mut indices: Vec<usize> = (0..items.len()).collect();
+    indices.sort_by(|&a, &b| {
+        let cmp = cmp_json_values(keys[a].as_ref(), keys[b].as_ref());
+        if desc { cmp.reverse() } else { cmp }
     });
+
+    // Apply permutation: clone sorted items back (T: Clone)
+    let sorted: Vec<T> = indices.iter().map(|&i| items[i].clone()).collect();
+    items.clone_from_slice(&sorted);
+
     Ok(())
 }
 
@@ -429,6 +446,9 @@ fn cmp_json_values(
 
 /// Record an audit entry, gated by the `audit` feature flag.
 /// Also forwards the entry to HistoryService if the `history` flag is enabled.
+///
+/// When the audit flag is disabled, a `debug!` trace is emitted so that
+/// suppressed audit events remain observable in diagnostic logs (E5 fix).
 #[allow(clippy::too_many_arguments)]
 fn guarded_audit(
     state: &AppState,
@@ -442,16 +462,21 @@ fn guarded_audit(
     trace_id: Option<&str>,
 ) {
     use native_interfaces::feature_flags::flags;
-    if state.runtime.feature_flags.is_enabled(flags::AUDIT) {
-        state.security.audit_log.record(
-            caller, action, target, resource, method, outcome, detail, trace_id,
+    if !state.runtime.feature_flags.is_enabled(flags::AUDIT) {
+        tracing::debug!(
+            %caller, ?action, %target, %resource, %method, %outcome,
+            "audit flag disabled — event not recorded"
         );
-        // W2.2 + E2.4: forward audit entry to history if enabled
-        if state.runtime.feature_flags.is_enabled(flags::HISTORY) {
-            let entries = state.security.audit_log.recent(1);
-            if let Some(entry) = entries.first() {
-                state.diag.history.record_audit(entry);
-            }
+        return;
+    }
+    state.security.audit_log.record(
+        caller, action, target, resource, method, outcome, detail, trace_id,
+    );
+    // W2.2 + E2.4: forward audit entry to history if enabled
+    if state.runtime.feature_flags.is_enabled(flags::HISTORY) {
+        let entries = state.security.audit_log.recent(1);
+        if let Some(entry) = entries.first() {
+            state.diag.history.record_audit(entry);
         }
     }
 }
@@ -648,6 +673,26 @@ pub fn build_router(state: AppState, auth_config: AuthConfig, metrics_enabled: b
         .route(
             "/components/{component_id}/data/subscribe",
             get(subscribe_data_changes),
+        )
+        // RXSWIN tracking (F15, UNECE R156)
+        .route("/rxswin", get(list_rxswin))
+        .route("/rxswin/report", get(rxswin_report))
+        .route("/rxswin/{component_id}", get(get_rxswin))
+        .route("/update-provenance", get(list_update_provenance))
+        // TARA (F16, ISO/SAE 21434)
+        .route("/tara/assets", get(list_tara_assets))
+        .route("/tara/threats", get(list_tara_threats))
+        .route("/tara/export", get(tara_export))
+        // UCM campaigns (F18, AUTOSAR R24-11)
+        .route("/ucm/campaigns", get(list_ucm_campaigns).post(create_ucm_campaign))
+        .route("/ucm/campaigns/{campaign_id}", get(get_ucm_campaign))
+        .route(
+            "/ucm/campaigns/{campaign_id}/execute",
+            post(execute_ucm_campaign),
+        )
+        .route(
+            "/ucm/campaigns/{campaign_id}/rollback",
+            post(rollback_ucm_campaign),
         );
 
     // ── Vendor extensions (x-uds prefixed, non-standard) ────────────────
@@ -672,6 +717,15 @@ pub fn build_router(state: AppState, auth_config: AuthConfig, metrics_enabled: b
         .route("/components/{component_id}/memory", get(read_memory))
         .route("/components/{component_id}/memory", put(write_memory))
         .route("/components/{component_id}/flash", post(start_flash))
+        // UDS Security Access (F17, ISO 14229 §9)
+        .route(
+            "/components/{component_id}/security-levels",
+            get(list_security_levels),
+        )
+        .route(
+            "/components/{component_id}/security-access",
+            post(security_access),
+        )
         .route("/diag/keepalive", get(keepalive_status))
         .with_state(state.clone());
 
@@ -973,12 +1027,23 @@ async fn odata_metadata() -> Json<serde_json::Value> {
     }))
 }
 
-/// Variant-aware discovery query parameters (Wave 3, W3.3).
+/// Combined pagination + variant-aware discovery query parameters (Wave 3, W3.3).
 ///
-/// These are convenience filters in addition to OData $filter.
-/// Example: `GET /sovd/v1/components?variant=premium&softwareVersion=2.1.0`
+/// Merges OData pagination and variant filters into a single query extraction
+/// to avoid parsing the query string twice (C1 fix).
+/// Example: `GET /sovd/v1/components?variant=premium&softwareVersion=2.1.0&$top=10`
 #[derive(Debug, Deserialize, Default)]
-struct VariantFilter {
+struct ComponentListParams {
+    #[serde(rename = "$top")]
+    top: Option<usize>,
+    #[serde(rename = "$skip")]
+    skip: Option<usize>,
+    #[serde(rename = "$filter")]
+    filter: Option<String>,
+    #[serde(rename = "$orderby")]
+    orderby: Option<String>,
+    #[serde(rename = "$select")]
+    select: Option<String>,
     /// Filter by installation variant (e.g. "base", "premium", "sport")
     #[serde(default)]
     variant: Option<String>,
@@ -990,27 +1055,38 @@ struct VariantFilter {
     hardware_variant: Option<String>,
 }
 
-#[tracing::instrument(skip(state, params, variant))]
+impl ComponentListParams {
+    fn as_pagination(&self) -> PaginationParams {
+        PaginationParams {
+            top: self.top,
+            skip: self.skip,
+            filter: self.filter.clone(),
+            orderby: self.orderby.clone(),
+            select: self.select.clone(),
+        }
+    }
+}
+
+#[tracing::instrument(skip(state, params))]
 async fn list_components(
     State(state): State<AppState>,
-    axum::extract::Query(params): axum::extract::Query<PaginationParams>,
-    axum::extract::Query(variant): axum::extract::Query<VariantFilter>,
+    axum::extract::Query(params): axum::extract::Query<ComponentListParams>,
 ) -> Result<Json<Collection<serde_json::Value>>, (StatusCode, Json<SovdErrorEnvelope>)> {
     let mut components = state.backend.list_components();
 
     // Apply variant filters (W3.3)
-    if let Some(ref v) = variant.variant {
+    if let Some(ref v) = params.variant {
         components.retain(|c| c.installation_variant.as_deref() == Some(v.as_str()));
     }
-    if let Some(ref sv) = variant.software_version {
+    if let Some(ref sv) = params.software_version {
         components.retain(|c| c.software_version.as_deref() == Some(sv.as_str()));
     }
-    if let Some(ref hv) = variant.hardware_variant {
+    if let Some(ref hv) = params.hardware_variant {
         components.retain(|c| c.hardware_variant.as_deref() == Some(hv.as_str()));
     }
 
     Ok(Json(
-        paginate(components, &params)?.with_context("$metadata#components"),
+        paginate(components, &params.as_pagination())?.with_context("$metadata#components"),
     ))
 }
 
@@ -1058,6 +1134,7 @@ async fn connect_component(
 
 async fn disconnect_component(
     State(state): State<AppState>,
+    CallerIdentity(caller): CallerIdentity,
     Path(component_id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<SovdErrorEnvelope>)> {
     state
@@ -1065,9 +1142,14 @@ async fn disconnect_component(
         .disconnect(&component_id)
         .await
         .map_err(|ref e| diag_error(e))?;
+    let caller_label = if caller.is_empty() {
+        "anonymous"
+    } else {
+        &caller
+    };
     guarded_audit(
         &state,
-        "anonymous",
+        caller_label,
         SovdAuditAction::Disconnect,
         &format!("component/{component_id}"),
         "session",
@@ -1091,10 +1173,8 @@ async fn list_faults(
         .diag
         .fault_manager
         .get_faults_for_component(&component_id);
-    // W2.2 + E2.4: Record fault snapshot to history (flag-gated)
-    for fault in &faults {
-        guarded_history_fault(&state, fault);
-    }
+    // History is recorded on state-changing operations (clear_faults, below),
+    // not on every read — avoids O(faults × poll_rate) duplicate writes.
     Ok(Json(
         paginate(faults, &params)?.with_context("$metadata#faults"),
     ))
@@ -1150,14 +1230,13 @@ async fn read_data(
         .map_err(|ref e| diag_error(e))?;
 
     // Compute ETag from response body (SOVD §6.5 — conditional requests)
+    // Uses SHA-256 (truncated to 16 hex chars) for cross-version determinism.
     let body_bytes = serde_json::to_vec(&data).unwrap_or_default();
-    let hash = {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        body_bytes.hash(&mut hasher);
-        hasher.finish()
+    let etag = {
+        use sha2::{Digest, Sha256};
+        let digest = Sha256::digest(&body_bytes);
+        format!("\"{}\"", &hex::encode(digest)[..16])
     };
-    let etag = format!("\"{}\"", hex::encode(hash.to_be_bytes()));
 
     // If-None-Match → 304 Not Modified
     if let Some(inm) = headers.get(http::header::IF_NONE_MATCH) {
@@ -1304,7 +1383,13 @@ async fn execute_operation(
         progress: Some(0),
         timestamp: Some(chrono::Utc::now().to_rfc3339()),
     };
-    evict_and_insert(&state.runtime.execution_store, exec_id.clone(), exec);
+    evict_and_insert(
+        &state.runtime.execution_store,
+        exec_id.clone(),
+        exec,
+        &state.runtime.execution_order,
+        state.runtime.max_store_entries,
+    );
 
     // Execute backend operation
     let result = state
@@ -1363,16 +1448,36 @@ async fn execute_operation(
     Ok((StatusCode::ACCEPTED, resp_headers, Json(final_exec)))
 }
 
-/// Bounded insert into a DashMap, evicting oldest entry if at capacity.
-fn evict_and_insert<V: Clone>(store: &dashmap::DashMap<String, V>, key: String, value: V) {
-    const MAX_ENTRIES: usize = 10_000;
-    if store.len() >= MAX_ENTRIES {
-        if let Some(entry) = store.iter().next() {
-            let evict_key = entry.key().clone();
-            drop(entry);
-            store.remove(&evict_key);
+/// Bounded insert into a DashMap, evicting the **oldest** entry if at capacity.
+///
+/// Maintains a separate insertion-order queue so eviction is always FIFO,
+/// not random (DashMap iteration order is non-deterministic).
+fn evict_and_insert<V: Clone>(
+    store: &dashmap::DashMap<String, V>,
+    key: String,
+    value: V,
+    insertion_order: &std::sync::Mutex<std::collections::VecDeque<String>>,
+    max_entries: usize,
+) {
+
+    let mut order = insertion_order
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+    // Evict oldest entries until we're under capacity
+    while store.len() >= max_entries {
+        if let Some(oldest_key) = order.pop_front() {
+            store.remove(&oldest_key);
+        } else {
+            break; // Queue empty — should not happen, but avoid infinite loop
         }
     }
+
+    // If key already exists, remove old queue entry to avoid duplicates
+    order.retain(|k| k != &key);
+    order.push_back(key.clone());
+    drop(order);
+
     store.insert(key, value);
 }
 
@@ -1977,11 +2082,10 @@ async fn compliance_evidence(State(state): State<AppState>) -> Json<serde_json::
         "sovdVersion": "1.1.0",
         "oemProfile": oem_profile,
         "security": {
-            "authEnabled": true,
+            "authEnabled": state.security.auth_enabled,
             "rateLimitEnabled": state.security.rate_limiter.is_some(),
             "auditLogEntries": audit_count,
             "auditChainIntegrity": chain_verification,
-            "mTlsCapable": true,
         },
         "diagnostics": {
             "components": component_count,
@@ -2696,21 +2800,26 @@ async fn list_executions(
 
 async fn get_execution(
     State(state): State<AppState>,
-    Path((_component_id, _op_id, exec_id)): Path<(String, String, String)>,
+    Path((component_id, op_id, exec_id)): Path<(String, String, String)>,
 ) -> Result<Json<SovdOperationExecution>, (StatusCode, Json<SovdErrorEnvelope>)> {
     state
         .runtime
         .execution_store
         .get(&exec_id)
+        .filter(|e| e.component_id == component_id && e.operation_id == op_id)
         .map(|e| Json(e.value().clone()))
         .ok_or_else(|| not_found(&format!("Execution '{exec_id}' not found")))
 }
 
 async fn cancel_execution(
     State(state): State<AppState>,
-    Path((_component_id, _op_id, exec_id)): Path<(String, String, String)>,
+    Path((component_id, op_id, exec_id)): Path<(String, String, String)>,
 ) -> Result<StatusCode, (StatusCode, Json<SovdErrorEnvelope>)> {
     if let Some(mut entry) = state.runtime.execution_store.get_mut(&exec_id) {
+        // Verify execution belongs to the requested component/operation scope
+        if entry.component_id != component_id || entry.operation_id != op_id {
+            return Err(not_found(&format!("Execution '{exec_id}' not found")));
+        }
         if entry.status == SovdOperationStatus::Running {
             entry.status = SovdOperationStatus::Cancelled;
             Ok(StatusCode::NO_CONTENT)
@@ -2750,14 +2859,20 @@ async fn proximity_challenge(
         &state.runtime.proximity_store,
         challenge.challenge_id.clone(),
         challenge.clone(),
+        &state.runtime.proximity_order,
+        state.runtime.max_store_entries,
     );
     Ok((StatusCode::CREATED, Json(challenge)))
 }
 
 async fn get_proximity_challenge(
     State(state): State<AppState>,
-    Path((_component_id, challenge_id)): Path<(String, String)>,
+    Path((component_id, challenge_id)): Path<(String, String)>,
 ) -> Result<Json<SovdProximityChallenge>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    // Validate the component exists (C6 fix — don't ignore path segment)
+    if state.backend.get_component(&component_id).is_none() {
+        return Err(not_found(&format!("Component '{component_id}' not found")));
+    }
     state
         .runtime
         .proximity_store
@@ -3442,6 +3557,392 @@ fn diag_error(e: &native_interfaces::DiagServiceError) -> (StatusCode, Json<Sovd
     sovd_error(ec, &e.to_string())
 }
 
+// ── RXSWIN Tracking (F15, UNECE R156) ───────────────────────────────────
+
+/// GET /sovd/v1/rxswin — list all RXSWIN entries
+async fn list_rxswin(
+    State(state): State<AppState>,
+) -> Json<Collection<native_interfaces::sovd::RxswinEntry>> {
+    let entries: Vec<native_interfaces::sovd::RxswinEntry> = state
+        .runtime
+        .rxswin_store
+        .iter()
+        .map(|r| r.value().clone())
+        .collect();
+    Json(Collection::new(entries).with_context("$metadata#rxswin"))
+}
+
+/// GET /sovd/v1/rxswin/report — vehicle-level RXSWIN report
+async fn rxswin_report(
+    State(state): State<AppState>,
+) -> Json<native_interfaces::sovd::RxswinReport> {
+    let entries: Vec<native_interfaces::sovd::RxswinEntry> = state
+        .runtime
+        .rxswin_store
+        .iter()
+        .map(|r| r.value().clone())
+        .collect();
+    let total = entries.len();
+    Json(native_interfaces::sovd::RxswinReport {
+        vin: "UNKNOWN".to_owned(),
+        generated_at: chrono::Utc::now().to_rfc3339(),
+        entries,
+        total_components: total,
+    })
+}
+
+/// GET /sovd/v1/rxswin/{component_id} — get RXSWIN for specific component
+async fn get_rxswin(
+    State(state): State<AppState>,
+    Path(component_id): Path<String>,
+) -> Result<Json<native_interfaces::sovd::RxswinEntry>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    state
+        .runtime
+        .rxswin_store
+        .get(&component_id)
+        .map(|r| Json(r.value().clone()))
+        .ok_or_else(|| not_found(&format!("No RXSWIN entry for component '{component_id}'")))
+}
+
+/// GET /sovd/v1/update-provenance — list update provenance log
+async fn list_update_provenance(
+    State(state): State<AppState>,
+) -> Json<Collection<native_interfaces::sovd::UpdateProvenanceEntry>> {
+    let entries = state.runtime.provenance_log.read().clone();
+    Json(Collection::new(entries).with_context("$metadata#updateProvenance"))
+}
+
+// ── TARA (F16, ISO/SAE 21434) ───────────────────────────────────────────
+
+/// GET /sovd/v1/tara/assets — list TARA asset inventory
+async fn list_tara_assets(
+    State(state): State<AppState>,
+) -> Json<Collection<native_interfaces::sovd::TaraAsset>> {
+    let assets = state.runtime.tara_assets.read().clone();
+    Json(Collection::new(assets).with_context("$metadata#taraAssets"))
+}
+
+/// GET /sovd/v1/tara/threats — list TARA threat entries
+async fn list_tara_threats(
+    State(state): State<AppState>,
+) -> Json<Collection<native_interfaces::sovd::TaraThreatEntry>> {
+    let threats = state.runtime.tara_threats.read().clone();
+    Json(Collection::new(threats).with_context("$metadata#taraThreats"))
+}
+
+/// GET /sovd/v1/tara/export — full TARA export (ISO/SAE 21434 §15 work product)
+async fn tara_export(
+    State(state): State<AppState>,
+) -> Json<native_interfaces::sovd::TaraExport> {
+    let assets = state.runtime.tara_assets.read().clone();
+    let threats = state.runtime.tara_threats.read().clone();
+    let mitigated = threats
+        .iter()
+        .filter(|t| t.status == native_interfaces::sovd::TaraThreatStatus::Mitigated)
+        .count();
+    let high_risk = threats.iter().filter(|t| t.residual_risk == "high").count();
+    Json(native_interfaces::sovd::TaraExport {
+        generated_at: chrono::Utc::now().to_rfc3339(),
+        system_id: "OpenSOVD-native".to_owned(),
+        summary: native_interfaces::sovd::TaraSummary {
+            total_assets: assets.len(),
+            total_threats: threats.len(),
+            mitigated_threats: mitigated,
+            high_risk_threats: high_risk,
+        },
+        assets,
+        threats,
+    })
+}
+
+// ── UDS Security Access (F17, ISO 14229 §9) ────────────────────────────
+
+/// GET /sovd/v1/x-uds/components/{component_id}/security-levels
+async fn list_security_levels(
+    State(state): State<AppState>,
+    Path(component_id): Path<String>,
+) -> Result<
+    Json<Collection<native_interfaces::sovd::UdsSecurityLevel>>,
+    (StatusCode, Json<SovdErrorEnvelope>),
+> {
+    // Verify component exists
+    state
+        .backend
+        .get_component(&component_id)
+        .ok_or_else(|| not_found(&format!("Component '{component_id}' not found")))?;
+    // Return standard UDS security levels (§9 defines odd levels 0x01..0x41)
+    let levels = vec![
+        native_interfaces::sovd::UdsSecurityLevel {
+            level: 0x01,
+            name: "Level 1 — Workshop".to_owned(),
+            description: Some("Standard workshop access for routine diagnostics".to_owned()),
+            unlocked: false,
+            protected_services: vec!["0x2E".to_owned(), "0x31".to_owned()],
+        },
+        native_interfaces::sovd::UdsSecurityLevel {
+            level: 0x03,
+            name: "Level 3 — Engineering".to_owned(),
+            description: Some("Engineering access for ECU flashing and calibration".to_owned()),
+            unlocked: false,
+            protected_services: vec![
+                "0x34".to_owned(),
+                "0x35".to_owned(),
+                "0x36".to_owned(),
+                "0x37".to_owned(),
+            ],
+        },
+        native_interfaces::sovd::UdsSecurityLevel {
+            level: 0x05,
+            name: "Level 5 — OEM".to_owned(),
+            description: Some("OEM-level access for security-critical operations".to_owned()),
+            unlocked: false,
+            protected_services: vec!["0x27".to_owned(), "0x2F".to_owned()],
+        },
+    ];
+    Ok(Json(
+        Collection::new(levels).with_context("$metadata#securityLevels"),
+    ))
+}
+
+/// POST /sovd/v1/x-uds/components/{component_id}/security-access
+async fn security_access(
+    State(state): State<AppState>,
+    caller: CallerIdentity,
+    Path(component_id): Path<String>,
+    Json(req): Json<native_interfaces::sovd::UdsSecurityAccessRequest>,
+) -> Result<Json<native_interfaces::sovd::UdsSecurityAccessResponse>, (StatusCode, Json<SovdErrorEnvelope>)>
+{
+    state
+        .backend
+        .get_component(&component_id)
+        .ok_or_else(|| not_found(&format!("Component '{component_id}' not found")))?;
+
+    match req.phase.as_str() {
+        "requestSeed" => {
+            // Generate a random seed (in production this would come from the ECU)
+            let seed = format!("{:016X}", rand_seed());
+            guarded_audit(
+                &state,
+                &caller.0,
+                SovdAuditAction::ReadData,
+                &format!("component/{component_id}"),
+                &format!("security-access/level-{:02X}/requestSeed", req.level),
+                "POST",
+                "success",
+                None,
+                None,
+            );
+            Ok(Json(native_interfaces::sovd::UdsSecurityAccessResponse {
+                level: req.level,
+                phase: "requestSeed".to_owned(),
+                seed: Some(seed),
+                granted: None,
+                remaining_attempts: Some(3),
+            }))
+        }
+        "sendKey" => {
+            // In production, the key would be validated by the ECU via 0x27 service.
+            // Here we accept any non-empty key for the mock implementation.
+            let granted = req.key.as_ref().is_some_and(|k| !k.is_empty());
+            let outcome = if granted { "success" } else { "denied" };
+            guarded_audit(
+                &state,
+                &caller.0,
+                SovdAuditAction::WriteData,
+                &format!("component/{component_id}"),
+                &format!("security-access/level-{:02X}/sendKey", req.level),
+                "POST",
+                outcome,
+                None,
+                None,
+            );
+            Ok(Json(native_interfaces::sovd::UdsSecurityAccessResponse {
+                level: req.level,
+                phase: "sendKey".to_owned(),
+                seed: None,
+                granted: Some(granted),
+                remaining_attempts: if granted { None } else { Some(2) },
+            }))
+        }
+        _ => Err(bad_request(&format!(
+            "Invalid phase '{}'. Expected 'requestSeed' or 'sendKey'",
+            req.phase
+        ))),
+    }
+}
+
+/// Cryptographically secure random seed for UDS Security Access (ISO 14229 §9).
+///
+/// Uses OS-level CSPRNG via `rand::rngs::OsRng` to prevent seed prediction.
+fn rand_seed() -> u64 {
+    use rand::Rng;
+    rand::thread_rng().gen()
+}
+
+// ── UCM Campaigns (F18, AUTOSAR R24-11) ─────────────────────────────────
+
+/// GET /sovd/v1/ucm/campaigns — list all UCM campaigns
+async fn list_ucm_campaigns(
+    State(state): State<AppState>,
+) -> Json<Collection<native_interfaces::sovd::UcmCampaign>> {
+    let campaigns: Vec<native_interfaces::sovd::UcmCampaign> = state
+        .runtime
+        .ucm_campaigns
+        .iter()
+        .map(|r| r.value().clone())
+        .collect();
+    Json(Collection::new(campaigns).with_context("$metadata#ucmCampaigns"))
+}
+
+/// POST body for creating a UCM campaign
+#[derive(Deserialize)]
+struct CreateUcmCampaignRequest {
+    name: String,
+    #[serde(rename = "targetComponents")]
+    target_components: Vec<String>,
+}
+
+/// POST /sovd/v1/ucm/campaigns — create a new UCM campaign
+async fn create_ucm_campaign(
+    State(state): State<AppState>,
+    caller: CallerIdentity,
+    Json(body): Json<CreateUcmCampaignRequest>,
+) -> Result<(StatusCode, Json<native_interfaces::sovd::UcmCampaign>), (StatusCode, Json<SovdErrorEnvelope>)>
+{
+    if body.target_components.is_empty() {
+        return Err(bad_request("targetComponents must not be empty"));
+    }
+    let campaign_id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().to_rfc3339();
+    let campaign = native_interfaces::sovd::UcmCampaign {
+        id: campaign_id.clone(),
+        name: body.name,
+        status: native_interfaces::sovd::UcmCampaignStatus::Created,
+        target_components: body.target_components,
+        created_at: now,
+        updated_at: None,
+        progress: Some(0),
+        error: None,
+        transfer_states: vec![],
+    };
+    state
+        .runtime
+        .ucm_campaigns
+        .insert(campaign_id, campaign.clone());
+    guarded_audit(
+        &state,
+        &caller.0,
+        SovdAuditAction::InstallPackage,
+        "ucm",
+        &format!("campaigns/{}", campaign.id),
+        "POST",
+        "success",
+        None,
+        None,
+    );
+    Ok((StatusCode::CREATED, Json(campaign)))
+}
+
+/// GET /sovd/v1/ucm/campaigns/{campaign_id}
+async fn get_ucm_campaign(
+    State(state): State<AppState>,
+    Path(campaign_id): Path<String>,
+) -> Result<Json<native_interfaces::sovd::UcmCampaign>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    state
+        .runtime
+        .ucm_campaigns
+        .get(&campaign_id)
+        .map(|r| Json(r.value().clone()))
+        .ok_or_else(|| not_found(&format!("UCM campaign '{campaign_id}' not found")))
+}
+
+/// POST /sovd/v1/ucm/campaigns/{campaign_id}/execute
+async fn execute_ucm_campaign(
+    State(state): State<AppState>,
+    caller: CallerIdentity,
+    Path(campaign_id): Path<String>,
+) -> Result<Json<native_interfaces::sovd::UcmCampaign>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    let mut campaign = state
+        .runtime
+        .ucm_campaigns
+        .get(&campaign_id)
+        .map(|r| r.value().clone())
+        .ok_or_else(|| not_found(&format!("UCM campaign '{campaign_id}' not found")))?;
+
+    if campaign.status != native_interfaces::sovd::UcmCampaignStatus::Created {
+        return Err(conflict(&format!(
+            "Campaign '{}' is in state {:?}, expected 'created'",
+            campaign_id, campaign.status
+        )));
+    }
+
+    campaign.status = native_interfaces::sovd::UcmCampaignStatus::Processing;
+    campaign.updated_at = Some(chrono::Utc::now().to_rfc3339());
+    campaign.progress = Some(50);
+    campaign.transfer_states = campaign
+        .target_components
+        .iter()
+        .map(|cid| native_interfaces::sovd::UcmTransferState {
+            component_id: cid.clone(),
+            package_id: format!("pkg-{cid}"),
+            state: native_interfaces::sovd::UcmTransferPhase::Processing,
+            progress: Some(50),
+        })
+        .collect();
+    state
+        .runtime
+        .ucm_campaigns
+        .insert(campaign_id.clone(), campaign.clone());
+    guarded_audit(
+        &state,
+        &caller.0,
+        SovdAuditAction::InstallPackage,
+        "ucm",
+        &format!("campaigns/{campaign_id}/execute"),
+        "POST",
+        "success",
+        None,
+        None,
+    );
+    Ok(Json(campaign))
+}
+
+/// POST /sovd/v1/ucm/campaigns/{campaign_id}/rollback
+async fn rollback_ucm_campaign(
+    State(state): State<AppState>,
+    caller: CallerIdentity,
+    Path(campaign_id): Path<String>,
+) -> Result<Json<native_interfaces::sovd::UcmCampaign>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    let mut campaign = state
+        .runtime
+        .ucm_campaigns
+        .get(&campaign_id)
+        .map(|r| r.value().clone())
+        .ok_or_else(|| not_found(&format!("UCM campaign '{campaign_id}' not found")))?;
+
+    campaign.status = native_interfaces::sovd::UcmCampaignStatus::RollingBack;
+    campaign.updated_at = Some(chrono::Utc::now().to_rfc3339());
+    for ts in &mut campaign.transfer_states {
+        ts.state = native_interfaces::sovd::UcmTransferPhase::RollingBack;
+    }
+    state
+        .runtime
+        .ucm_campaigns
+        .insert(campaign_id.clone(), campaign.clone());
+    guarded_audit(
+        &state,
+        &caller.0,
+        SovdAuditAction::InstallPackage,
+        "ucm",
+        &format!("campaigns/{campaign_id}/rollback"),
+        "POST",
+        "success",
+        None,
+        None,
+    );
+    Ok(Json(campaign))
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -3733,14 +4234,23 @@ mod tests {
                 oem_profile: Arc::new(native_interfaces::DefaultProfile),
                 audit_log: Arc::new(AuditLog::new()),
                 rate_limiter: None,
+                auth_enabled: false,
             },
             runtime: RuntimeState {
                 health: Arc::new(HealthMonitor::new()),
+                max_store_entries: 10_000,
                 execution_store: Arc::new(dashmap::DashMap::new()),
+                execution_order: Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
                 proximity_store: Arc::new(dashmap::DashMap::new()),
+                proximity_order: Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
                 package_store: Arc::new(dashmap::DashMap::new()),
                 feature_flags: Arc::new(native_interfaces::FeatureFlags::new()),
                 firmware_verifier: Arc::new(native_interfaces::NoopVerifier),
+                rxswin_store: Arc::new(dashmap::DashMap::new()),
+                provenance_log: Arc::new(parking_lot::RwLock::new(Vec::new())),
+                tara_assets: Arc::new(parking_lot::RwLock::new(Vec::new())),
+                tara_threats: Arc::new(parking_lot::RwLock::new(Vec::new())),
+                ucm_campaigns: Arc::new(dashmap::DashMap::new()),
             },
             data_catalog: Arc::new(native_interfaces::StaticDataCatalogProvider::new()),
         }
@@ -5049,6 +5559,916 @@ mod tests {
         assert!(actions.contains(&"connect"), "actions={actions:?}");
         assert!(actions.contains(&"disconnect"), "actions={actions:?}");
     }
+
+    // ── F15: RXSWIN Tracking (UNECE R156) ────────────────────────────────
+
+    #[tokio::test]
+    async fn rxswin_returns_empty_initially() {
+        let app = test_router();
+        let resp = app
+            .oneshot(Request::get("/sovd/v1/rxswin").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["@odata.count"], 0);
+        assert_eq!(json["@odata.context"], "$metadata#rxswin");
+    }
+
+    #[tokio::test]
+    async fn rxswin_report_returns_empty_report() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/rxswin/report")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["totalComponents"], 0);
+        assert!(json["generatedAt"].as_str().is_some());
+    }
+
+    #[tokio::test]
+    async fn rxswin_get_component_not_found() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/rxswin/nonexistent")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn rxswin_store_and_retrieve() {
+        let state = test_state();
+        state.runtime.rxswin_store.insert(
+            "hpc".to_owned(),
+            native_interfaces::sovd::RxswinEntry {
+                component_id: "hpc".into(),
+                rxswin: "RXSWIN-001-EU".into(),
+                software_version: "1.0.0".into(),
+                updated_at: "2025-06-01T00:00:00Z".into(),
+                authority: Some("KBA".into()),
+                approval_ref: None,
+            },
+        );
+        let app = build_router(state, AuthConfig::default(), true);
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::get("/sovd/v1/rxswin/hpc")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["rxswin"], "RXSWIN-001-EU");
+        assert_eq!(json["componentId"], "hpc");
+    }
+
+    #[tokio::test]
+    async fn update_provenance_returns_empty_initially() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/update-provenance")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["@odata.count"], 0);
+        assert_eq!(json["@odata.context"], "$metadata#updateProvenance");
+    }
+
+    // ── F16: TARA (ISO/SAE 21434) ────────────────────────────────────────
+
+    #[tokio::test]
+    async fn tara_assets_returns_empty_initially() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/tara/assets")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["@odata.count"], 0);
+        assert_eq!(json["@odata.context"], "$metadata#taraAssets");
+    }
+
+    #[tokio::test]
+    async fn tara_threats_returns_empty_initially() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/tara/threats")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["@odata.count"], 0);
+        assert_eq!(json["@odata.context"], "$metadata#taraThreats");
+    }
+
+    #[tokio::test]
+    async fn tara_export_returns_empty_document() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/tara/export")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["systemId"], "OpenSOVD-native");
+        assert_eq!(json["summary"]["totalAssets"], 0);
+        assert_eq!(json["summary"]["totalThreats"], 0);
+    }
+
+    #[tokio::test]
+    async fn tara_export_with_populated_data() {
+        let state = test_state();
+        {
+            let mut assets = state.runtime.tara_assets.write();
+            assets.push(native_interfaces::sovd::TaraAsset {
+                id: "A-001".into(),
+                name: "HPC ECU".into(),
+                category: "ecu".into(),
+                component_ids: vec!["hpc".into()],
+                relevance: "high".into(),
+                description: None,
+            });
+        }
+        {
+            let mut threats = state.runtime.tara_threats.write();
+            threats.push(native_interfaces::sovd::TaraThreatEntry {
+                id: "T-001".into(),
+                name: "Firmware Tampering".into(),
+                category: "tampering".into(),
+                affected_assets: vec!["A-001".into()],
+                residual_risk: "high".into(),
+                mitigation: Some("Secure boot + code signing".into()),
+                status: native_interfaces::sovd::TaraThreatStatus::Mitigated,
+            });
+        }
+        let app = build_router(state, AuthConfig::default(), true);
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/tara/export")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["summary"]["totalAssets"], 1);
+        assert_eq!(json["summary"]["totalThreats"], 1);
+        assert_eq!(json["summary"]["mitigatedThreats"], 1);
+        assert_eq!(json["summary"]["highRiskThreats"], 1);
+    }
+
+    // ── F17: UDS Security Access (ISO 14229) ─────────────────────────────
+
+    #[tokio::test]
+    async fn security_levels_returns_levels_for_known_component() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/x-uds/components/hpc/security-levels")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["@odata.count"], 3);
+        let levels = json["value"].as_array().unwrap();
+        assert_eq!(levels[0]["level"], 1);
+        assert_eq!(levels[1]["level"], 3);
+        assert_eq!(levels[2]["level"], 5);
+    }
+
+    #[tokio::test]
+    async fn security_levels_returns_404_for_unknown_component() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/x-uds/components/nonexistent/security-levels")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn security_access_request_seed() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::post("/sovd/v1/x-uds/components/hpc/security-access")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"level":1,"phase":"requestSeed"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["level"], 1);
+        assert_eq!(json["phase"], "requestSeed");
+        assert!(json["seed"].as_str().is_some());
+        assert_eq!(json["remainingAttempts"], 3);
+    }
+
+    #[tokio::test]
+    async fn security_access_send_key_granted() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::post("/sovd/v1/x-uds/components/hpc/security-access")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"level":1,"phase":"sendKey","key":"AABBCCDD"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["granted"], true);
+    }
+
+    #[tokio::test]
+    async fn security_access_send_key_denied_empty() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::post("/sovd/v1/x-uds/components/hpc/security-access")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"level":1,"phase":"sendKey","key":""}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["granted"], false);
+        assert_eq!(json["remainingAttempts"], 2);
+    }
+
+    #[tokio::test]
+    async fn security_access_invalid_phase() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::post("/sovd/v1/x-uds/components/hpc/security-access")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"level":1,"phase":"invalid"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    // ── F18: UCM Campaigns (AUTOSAR R24-11) ──────────────────────────────
+
+    #[tokio::test]
+    async fn ucm_campaigns_returns_empty_initially() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/ucm/campaigns")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["@odata.count"], 0);
+        assert_eq!(json["@odata.context"], "$metadata#ucmCampaigns");
+    }
+
+    #[tokio::test]
+    async fn ucm_create_campaign() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::post("/sovd/v1/ucm/campaigns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"name":"OTA-2025","targetComponents":["hpc"]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["name"], "OTA-2025");
+        assert_eq!(json["status"], "created");
+        assert_eq!(json["progress"], 0);
+    }
+
+    #[tokio::test]
+    async fn ucm_create_campaign_empty_targets_rejected() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::post("/sovd/v1/ucm/campaigns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"name":"Bad","targetComponents":[]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn ucm_campaign_lifecycle_create_execute_rollback() {
+        let state = test_state();
+        let app = build_router(state, AuthConfig::default(), true);
+
+        // Create
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::post("/sovd/v1/ucm/campaigns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"name":"Full-OTA","targetComponents":["hpc"]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let campaign_id = json["id"].as_str().unwrap().to_owned();
+
+        // Execute
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/sovd/v1/ucm/campaigns/{campaign_id}/execute"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["status"], "processing");
+        assert_eq!(json["progress"], 50);
+
+        // Rollback
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/sovd/v1/ucm/campaigns/{campaign_id}/rollback"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["status"], "rollingBack");
+    }
+
+    #[tokio::test]
+    async fn ucm_get_campaign_not_found() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/ucm/campaigns/nonexistent")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn ucm_execute_not_found() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::post("/sovd/v1/ucm/campaigns/nonexistent/execute")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    // ── Serialization roundtrip tests for new types ──────────────────────
+
+    #[test]
+    fn rxswin_entry_serialization() {
+        let entry = native_interfaces::sovd::RxswinEntry {
+            component_id: "hpc".into(),
+            rxswin: "RXSWIN-001".into(),
+            software_version: "1.0.0".into(),
+            updated_at: "2025-01-01T00:00:00Z".into(),
+            authority: Some("KBA".into()),
+            approval_ref: None,
+        };
+        let json = serde_json::to_value(&entry).unwrap();
+        assert_eq!(json["componentId"], "hpc");
+        assert_eq!(json["rxswin"], "RXSWIN-001");
+        assert!(json.get("approvalRef").is_none());
+    }
+
+    #[test]
+    fn update_provenance_serialization() {
+        let entry = native_interfaces::sovd::UpdateProvenanceEntry {
+            id: "UPD-001".into(),
+            component_id: "hpc".into(),
+            previous_version: "1.0.0".into(),
+            new_version: "2.0.0".into(),
+            applied_at: "2025-06-01T12:00:00Z".into(),
+            update_method: "ota".into(),
+            package_digest: Some("abcdef".into()),
+            success: true,
+            rxswin_after: Some("RXSWIN-002".into()),
+        };
+        let json = serde_json::to_value(&entry).unwrap();
+        assert_eq!(json["previousVersion"], "1.0.0");
+        assert_eq!(json["newVersion"], "2.0.0");
+        assert_eq!(json["updateMethod"], "ota");
+        assert_eq!(json["rxswinAfter"], "RXSWIN-002");
+    }
+
+    #[test]
+    fn tara_threat_status_variants() {
+        use native_interfaces::sovd::TaraThreatStatus;
+        for (variant, expected) in [
+            (TaraThreatStatus::Identified, "identified"),
+            (TaraThreatStatus::Mitigated, "mitigated"),
+            (TaraThreatStatus::Accepted, "accepted"),
+            (TaraThreatStatus::Transferred, "transferred"),
+        ] {
+            let json = serde_json::to_value(variant).unwrap();
+            assert_eq!(json.as_str().unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn ucm_campaign_status_variants() {
+        use native_interfaces::sovd::UcmCampaignStatus;
+        for (variant, expected) in [
+            (UcmCampaignStatus::Created, "created"),
+            (UcmCampaignStatus::Transferring, "transferring"),
+            (UcmCampaignStatus::Processing, "processing"),
+            (UcmCampaignStatus::Activating, "activating"),
+            (UcmCampaignStatus::Activated, "activated"),
+            (UcmCampaignStatus::RollingBack, "rollingBack"),
+            (UcmCampaignStatus::RolledBack, "rolledBack"),
+            (UcmCampaignStatus::Failed, "failed"),
+            (UcmCampaignStatus::Cancelled, "cancelled"),
+        ] {
+            let json = serde_json::to_value(variant).unwrap();
+            assert_eq!(json.as_str().unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn ucm_transfer_phase_variants() {
+        use native_interfaces::sovd::UcmTransferPhase;
+        for (variant, expected) in [
+            (UcmTransferPhase::Idle, "idle"),
+            (UcmTransferPhase::Transferring, "transferring"),
+            (UcmTransferPhase::Transferred, "transferred"),
+            (UcmTransferPhase::Processing, "processing"),
+            (UcmTransferPhase::Processed, "processed"),
+            (UcmTransferPhase::Activating, "activating"),
+            (UcmTransferPhase::Activated, "activated"),
+            (UcmTransferPhase::RollingBack, "rollingBack"),
+            (UcmTransferPhase::Failed, "failed"),
+        ] {
+            let json = serde_json::to_value(variant).unwrap();
+            assert_eq!(json.as_str().unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn uds_security_level_serialization() {
+        let level = native_interfaces::sovd::UdsSecurityLevel {
+            level: 0x01,
+            name: "Workshop".into(),
+            description: Some("Routine diag".into()),
+            unlocked: false,
+            protected_services: vec!["0x2E".into()],
+        };
+        let json = serde_json::to_value(&level).unwrap();
+        assert_eq!(json["level"], 1);
+        assert_eq!(json["protectedServices"][0], "0x2E");
+    }
+
+    #[test]
+    fn uds_security_access_request_roundtrip() {
+        let req = native_interfaces::sovd::UdsSecurityAccessRequest {
+            level: 1,
+            phase: "requestSeed".into(),
+            key: None,
+        };
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["phase"], "requestSeed");
+        assert!(json.get("key").is_none());
+        let deser: native_interfaces::sovd::UdsSecurityAccessRequest =
+            serde_json::from_value(json).unwrap();
+        assert_eq!(deser.level, 1);
+    }
+
+    #[test]
+    fn uds_security_access_response_roundtrip() {
+        let resp = native_interfaces::sovd::UdsSecurityAccessResponse {
+            level: 1,
+            phase: "requestSeed".into(),
+            seed: Some("AABBCCDD".into()),
+            granted: None,
+            remaining_attempts: Some(3),
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["seed"], "AABBCCDD");
+        assert_eq!(json["remainingAttempts"], 3);
+        assert!(json.get("granted").is_none());
+    }
+
+    // ── Review-fix regression tests (v0.16.0) ───────────────────────────
+
+    /// E2: Verify ETag is present and deterministic (SHA-256 based)
+    #[tokio::test]
+    async fn read_data_etag_is_deterministic() {
+        let app = test_router();
+        let resp1 = app
+            .clone()
+            .oneshot(
+                Request::get("/sovd/v1/components/hpc/data/speed")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let etag1 = resp1
+            .headers()
+            .get("etag")
+            .map(|v| v.to_str().unwrap().to_owned());
+        assert!(etag1.is_some(), "ETag header must be present");
+
+        let resp2 = app
+            .oneshot(
+                Request::get("/sovd/v1/components/hpc/data/speed")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let etag2 = resp2
+            .headers()
+            .get("etag")
+            .map(|v| v.to_str().unwrap().to_owned());
+        assert_eq!(etag1, etag2, "ETags must be deterministic for same data");
+    }
+
+    /// E3: Compliance evidence should reflect auth_enabled=false in test state
+    #[tokio::test]
+    async fn compliance_evidence_auth_disabled() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/compliance-evidence")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["security"]["authEnabled"], false);
+    }
+
+    /// E4: disconnect_component returns 204
+    #[tokio::test]
+    async fn disconnect_component_returns_204() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::post("/sovd/v1/x-uds/components/hpc/disconnect")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+    }
+
+    /// E5: guarded_audit with audit flag disabled should not record
+    #[tokio::test]
+    async fn audit_flag_disabled_skips_recording() {
+        let state = test_state();
+        use native_interfaces::feature_flags::flags;
+        state.runtime.feature_flags.set(flags::AUDIT, false);
+        let app = build_router(state.clone(), AuthConfig::default(), true);
+        let _resp = app
+            .oneshot(
+                Request::put("/sovd/v1/components/hpc/data/speed")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"value":42}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(state.security.audit_log.recent(10).len(), 0);
+    }
+
+    /// C4: evict_and_insert respects configurable max_entries
+    #[test]
+    fn evict_and_insert_respects_max_entries() {
+        let store = dashmap::DashMap::new();
+        let order = std::sync::Mutex::new(std::collections::VecDeque::new());
+        let max = 3;
+        for i in 0..5 {
+            evict_and_insert(&store, format!("key-{i}"), i, &order, max);
+        }
+        assert_eq!(store.len(), 3);
+        assert!(!store.contains_key("key-0"));
+        assert!(!store.contains_key("key-1"));
+        assert!(store.contains_key("key-2"));
+        assert!(store.contains_key("key-3"));
+        assert!(store.contains_key("key-4"));
+    }
+
+    /// C4: evict_and_insert handles re-insert of existing key
+    #[test]
+    fn evict_and_insert_reinsert_deduplicates() {
+        let store = dashmap::DashMap::new();
+        let order = std::sync::Mutex::new(std::collections::VecDeque::new());
+        evict_and_insert(&store, "a".into(), 1, &order, 3);
+        evict_and_insert(&store, "b".into(), 2, &order, 3);
+        evict_and_insert(&store, "a".into(), 10, &order, 3);
+        evict_and_insert(&store, "c".into(), 3, &order, 3);
+        evict_and_insert(&store, "d".into(), 4, &order, 3);
+        assert_eq!(store.len(), 3);
+        assert!(!store.contains_key("b"));
+        assert!(store.contains_key("a"));
+        assert!(store.contains_key("c"));
+        assert!(store.contains_key("d"));
+    }
+
+    /// C6: get_proximity_challenge returns 404 for unknown component
+    #[tokio::test]
+    async fn proximity_challenge_unknown_component() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/components/nonexistent/proximity-challenges/fake-id")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// C2: get_execution scoped — wrong component returns 404
+    #[tokio::test]
+    async fn get_execution_wrong_component_returns_404() {
+        let state = test_state();
+        let exec = native_interfaces::sovd::SovdOperationExecution {
+            execution_id: "exec-1".into(),
+            component_id: "hpc".into(),
+            operation_id: "flash".into(),
+            status: native_interfaces::sovd::SovdOperationStatus::Running,
+            result: None,
+            progress: Some(50),
+            timestamp: None,
+        };
+        state.runtime.execution_store.insert("exec-1".into(), exec);
+        let app = build_router(state, AuthConfig::default(), true);
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/components/WRONG/operations/flash/executions/exec-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// C3: cancel_execution scoped — wrong operation returns 404
+    #[tokio::test]
+    async fn cancel_execution_wrong_operation_returns_404() {
+        let state = test_state();
+        let exec = native_interfaces::sovd::SovdOperationExecution {
+            execution_id: "exec-2".into(),
+            component_id: "hpc".into(),
+            operation_id: "flash".into(),
+            status: native_interfaces::sovd::SovdOperationStatus::Running,
+            result: None,
+            progress: Some(10),
+            timestamp: None,
+        };
+        state.runtime.execution_store.insert("exec-2".into(), exec);
+        let app = build_router(state, AuthConfig::default(), true);
+        let resp = app
+            .oneshot(
+                Request::post("/sovd/v1/components/hpc/operations/WRONG/executions/exec-2/cancel")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// P2: OData filter with boolean value
+    #[test]
+    fn odata_filter_bool_value() {
+        #[derive(Serialize, Clone, Debug, PartialEq)]
+        struct Item { name: String, active: bool }
+        let items = vec![
+            Item { name: "a".into(), active: true },
+            Item { name: "b".into(), active: false },
+            Item { name: "c".into(), active: true },
+        ];
+        let result = apply_odata_filter(items, "active eq 'true'").unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(result.iter().all(|i| i.active));
+    }
+
+    /// P2: OData filter with numeric value
+    #[test]
+    fn odata_filter_numeric_value() {
+        #[derive(Serialize, Clone, Debug)]
+        struct Item { id: u32, label: String }
+        let items = vec![
+            Item { id: 1, label: "first".into() },
+            Item { id: 2, label: "second".into() },
+            Item { id: 3, label: "third".into() },
+        ];
+        let result = apply_odata_filter(items, "id eq 2").unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].label, "second");
+    }
+
+    /// P2: OData orderby with pre-extracted keys
+    #[test]
+    fn odata_orderby_sorts_correctly() {
+        #[derive(Serialize, Clone, Debug)]
+        struct Item { name: String, score: u32 }
+        let mut items = vec![
+            Item { name: "c".into(), score: 30 },
+            Item { name: "a".into(), score: 10 },
+            Item { name: "b".into(), score: 20 },
+        ];
+        apply_odata_orderby(&mut items, "name").unwrap();
+        let names: Vec<_> = items.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(names, vec!["a", "b", "c"]);
+    }
+
+    /// P2: OData orderby desc
+    #[test]
+    fn odata_orderby_desc() {
+        #[derive(Serialize, Clone, Debug)]
+        struct Item { val: u32 }
+        let mut items = vec![Item { val: 1 }, Item { val: 3 }, Item { val: 2 }];
+        apply_odata_orderby(&mut items, "val desc").unwrap();
+        let vals: Vec<_> = items.iter().map(|i| i.val).collect();
+        assert_eq!(vals, vec![3, 2, 1]);
+    }
+
+    /// P2: OData filter invalid syntax returns error
+    #[test]
+    fn odata_filter_invalid_syntax() {
+        let items = vec![serde_json::json!({"a": 1})];
+        let result = apply_odata_filter(items, "invalid");
+        assert!(result.is_err());
+    }
+
+    /// P3: Canary routing — X-Served-By header present
+    #[tokio::test]
+    async fn canary_routing_adds_served_by_header() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/components")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(resp.headers().contains_key("x-served-by"));
+    }
+
+    /// C1: list_components with variant filter returns filtered results
+    #[tokio::test]
+    async fn list_components_variant_filter() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/components?variant=nonexistent")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["@odata.count"], 0);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -5336,14 +6756,23 @@ mod mock_backend_tests {
                 oem_profile: Arc::new(native_interfaces::DefaultProfile),
                 audit_log: Arc::new(native_core::AuditLog::new()),
                 rate_limiter: None,
+                auth_enabled: false,
             },
             runtime: RuntimeState {
                 health: Arc::new(HealthMonitor::new()),
+                max_store_entries: 10_000,
                 execution_store: Arc::new(dashmap::DashMap::new()),
+                execution_order: Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
                 proximity_store: Arc::new(dashmap::DashMap::new()),
+                proximity_order: Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
                 package_store: Arc::new(dashmap::DashMap::new()),
                 feature_flags: Arc::new(native_interfaces::FeatureFlags::new()),
                 firmware_verifier: Arc::new(native_interfaces::NoopVerifier),
+                rxswin_store: Arc::new(dashmap::DashMap::new()),
+                provenance_log: Arc::new(parking_lot::RwLock::new(Vec::new())),
+                tara_assets: Arc::new(parking_lot::RwLock::new(Vec::new())),
+                tara_threats: Arc::new(parking_lot::RwLock::new(Vec::new())),
+                ucm_campaigns: Arc::new(dashmap::DashMap::new()),
             },
             data_catalog: Arc::new(native_interfaces::StaticDataCatalogProvider::new()),
         }

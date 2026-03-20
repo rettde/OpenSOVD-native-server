@@ -106,6 +106,33 @@
 
 **Total: 433 tests · Clippy pedantic clean · ISO 17978-3 conformant (51/51)**
 
+### v0.15.0 — Phase 3 Future Work (RXSWIN, TARA, UDS Security, UCM, Deployment)
+
+| Area | What shipped | Tests |
+|------|-------------|-------|
+| RXSWIN Tracking (F15) | `RxswinEntry`, `RxswinReport`, `UpdateProvenanceEntry` — UNECE R156 RXSWIN per component, vehicle report, update provenance log | 5 |
+| TARA (F16) | `TaraAsset`, `TaraThreatEntry`, `TaraExport`, `TaraThreatStatus` — ISO/SAE 21434 asset inventory + threat analysis + export document | 5 |
+| UDS Security Access (F17) | `UdsSecurityLevel`, `UdsSecurityAccessRequest/Response` — ISO 14229 §9 seed/key protocol, 3-level security model (Workshop/Engineering/OEM) | 7 |
+| UCM Campaigns (F18) | `UcmCampaign`, `UcmCampaignStatus` (9 states), `UcmTransferState`, `UcmTransferPhase` (9 phases) — AUTOSAR R24-11 campaign lifecycle with rollback | 8 |
+
+| New endpoints | Path | Method |
+|---------------|------|--------|
+| RXSWIN list | `/sovd/v1/rxswin` | GET |
+| RXSWIN report | `/sovd/v1/rxswin/report` | GET |
+| RXSWIN by component | `/sovd/v1/rxswin/{component_id}` | GET |
+| Update provenance | `/sovd/v1/update-provenance` | GET |
+| TARA assets | `/sovd/v1/tara/assets` | GET |
+| TARA threats | `/sovd/v1/tara/threats` | GET |
+| TARA export | `/sovd/v1/tara/export` | GET |
+| UCM campaigns | `/sovd/v1/ucm/campaigns` | GET, POST |
+| UCM campaign detail | `/sovd/v1/ucm/campaigns/{id}` | GET |
+| UCM execute | `/sovd/v1/ucm/campaigns/{id}/execute` | POST |
+| UCM rollback | `/sovd/v1/ucm/campaigns/{id}/rollback` | POST |
+| UDS security levels | `/sovd/v1/x-uds/components/{id}/security-levels` | GET |
+| UDS security access | `/sovd/v1/x-uds/components/{id}/security-access` | POST |
+
+**Total: 469 tests · Clippy pedantic clean · ISO 17978-3 conformant (51/51)**
+
 ---
 
 ## Planned (not yet implemented)
@@ -118,7 +145,11 @@
 | F12 | ~~SW package signature verification~~ | **Implemented** — `FirmwareVerifier` trait (Ed25519 / Noop), signature gate in `activate_software_package`, `FirmwareConfig` in server TOML | ✅ | — |
 | F13 | ~~Horizontal scaling~~ | **Removed** — no In-Vehicle use case; AUTOSAR HPC is always single-instance | — | — |
 | F14 | ~~mTLS backend connections~~ | **Implemented** — `client_cert_path` / `client_key_path` / `ca_cert_path` on `SovdHttpBackendConfig`, reqwest identity + pinned CA | ✅ | — |
-| F15 | **OIDC E2E validation** | **Out of Scope** — requires Keycloak instance · [HowTo](howto-f15-oidc-e2e-validation.md) | — | — |
+| F15 | ~~RXSWIN Tracking~~ | **Implemented** — `RxswinEntry`, `RxswinReport`, `UpdateProvenanceEntry`, 4 endpoints | ✅ | — |
+| F16 | ~~TARA~~ | **Implemented** — `TaraAsset`, `TaraThreatEntry`, `TaraExport`, 3 endpoints | ✅ | — |
+| F17 | ~~UDS Security Access~~ | **Implemented** — `UdsSecurityLevel`, seed/key protocol, 2 endpoints | ✅ | — |
+| F18 | ~~UCM Campaigns~~ | **Implemented** — `UcmCampaign`, 9-state lifecycle, rollback orchestration, 5 endpoints | ✅ | — |
+| F19 | **OIDC E2E validation** | **Out of Scope** — requires Keycloak instance · [HowTo](howto-f15-oidc-e2e-validation.md) | — | — |
 
 **Effort key:** S = 1–2 days · M = 3–5 days · L = 1–2 weeks
 

@@ -248,6 +248,61 @@
         ],
         "type": "object"
       },
+      "RxswinEntry": {
+        "properties": {
+          "approval_ref": {
+            "type": "string"
+          },
+          "authority": {
+            "description": "Type-approval authority (e.g. KBA)",
+            "type": "string"
+          },
+          "component_id": {
+            "type": "string"
+          },
+          "rxswin": {
+            "description": "UNECE R156 RXSWIN identifier",
+            "type": "string"
+          },
+          "software_version": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "component_id",
+          "rxswin",
+          "software_version",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "RxswinReport": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/RxswinEntry"
+            },
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "vin": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "vin",
+          "generated_at",
+          "entries"
+        ],
+        "type": "object"
+      },
       "SovdError": {
         "properties": {
           "error_code": {
@@ -261,6 +316,315 @@
         "required": [
           "error_code",
           "message"
+        ],
+        "type": "object"
+      },
+      "TaraAsset": {
+        "properties": {
+          "asset_type": {
+            "type": "string"
+          },
+          "availability": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
+            "type": "string"
+          },
+          "confidentiality": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "integrity": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "asset_type",
+          "confidentiality",
+          "integrity",
+          "availability"
+        ],
+        "type": "object"
+      },
+      "TaraExport": {
+        "properties": {
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/TaraAsset"
+            },
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "summary": {
+            "properties": {
+              "mitigated": {
+                "type": "integer"
+              },
+              "open": {
+                "type": "integer"
+              },
+              "total_assets": {
+                "type": "integer"
+              },
+              "total_threats": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "threats": {
+            "items": {
+              "$ref": "#/components/schemas/TaraThreatEntry"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "generated_at",
+          "assets",
+          "threats",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "TaraThreatEntry": {
+        "properties": {
+          "asset_id": {
+            "type": "string"
+          },
+          "attack_vector": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "mitigation": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "risk_level": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "identified",
+              "analyzed",
+              "mitigated",
+              "accepted",
+              "transferred"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "asset_id",
+          "attack_vector",
+          "risk_level",
+          "status"
+        ],
+        "type": "object"
+      },
+      "UcmCampaign": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "progress_percent": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "created",
+              "transferring",
+              "transferred",
+              "processing",
+              "activating",
+              "activated",
+              "rollingBack",
+              "rolledBack",
+              "failed",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "target_components": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "transfer_states": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "target_components",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "UdsSecurityAccessRequest": {
+        "properties": {
+          "key": {
+            "description": "Hex-encoded key (sendKey phase only)",
+            "type": "string"
+          },
+          "level": {
+            "type": "integer"
+          },
+          "phase": {
+            "enum": [
+              "requestSeed",
+              "sendKey"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "level",
+          "phase"
+        ],
+        "type": "object"
+      },
+      "UdsSecurityAccessResponse": {
+        "properties": {
+          "granted": {
+            "type": "boolean"
+          },
+          "level": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "seed": {
+            "description": "Hex-encoded seed (requestSeed phase only)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "level",
+          "phase",
+          "granted"
+        ],
+        "type": "object"
+      },
+      "UdsSecurityLevel": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "level": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sub_function": {
+            "description": "UDS 0x27 sub-function byte",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "level",
+          "name",
+          "sub_function"
+        ],
+        "type": "object"
+      },
+      "UpdateProvenanceEntry": {
+        "properties": {
+          "applied_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "component_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "new_version": {
+            "type": "string"
+          },
+          "package_digest": {
+            "type": "string"
+          },
+          "previous_version": {
+            "type": "string"
+          },
+          "rxswin_after": {
+            "type": "string"
+          },
+          "update_method": {
+            "enum": [
+              "ota",
+              "local",
+              "factory"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "component_id",
+          "previous_version",
+          "new_version",
+          "applied_at",
+          "update_method"
         ],
         "type": "object"
       }
@@ -1116,6 +1480,442 @@
       },
       "x-sovd-name": "Execution"
     },
+    "/rxswin": {
+      "get": {
+        "operationId": "list_rxswin",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "value": {
+                      "items": {
+                        "$ref": "#/components/schemas/RxswinEntry"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List all RXSWIN entries (UNECE R156)",
+        "tags": [
+          "RXSWIN"
+        ]
+      },
+      "x-sovd-name": "RXSWIN"
+    },
+    "/rxswin/report": {
+      "get": {
+        "operationId": "rxswin_report",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RxswinReport"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Vehicle-level RXSWIN report",
+        "tags": [
+          "RXSWIN"
+        ]
+      }
+    },
+    "/rxswin/{component_id}": {
+      "get": {
+        "operationId": "get_rxswin",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RxswinEntry"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get RXSWIN for a specific component",
+        "tags": [
+          "RXSWIN"
+        ]
+      }
+    },
+    "/tara/assets": {
+      "get": {
+        "operationId": "list_tara_assets",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "value": {
+                      "items": {
+                        "$ref": "#/components/schemas/TaraAsset"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List TARA asset inventory (ISO/SAE 21434)",
+        "tags": [
+          "TARA"
+        ]
+      }
+    },
+    "/tara/export": {
+      "get": {
+        "operationId": "export_tara",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaraExport"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Full TARA export document",
+        "tags": [
+          "TARA"
+        ]
+      }
+    },
+    "/tara/threats": {
+      "get": {
+        "operationId": "list_tara_threats",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "value": {
+                      "items": {
+                        "$ref": "#/components/schemas/TaraThreatEntry"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List TARA threat entries",
+        "tags": [
+          "TARA"
+        ]
+      }
+    },
+    "/ucm/campaigns": {
+      "get": {
+        "operationId": "list_ucm_campaigns",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "value": {
+                      "items": {
+                        "$ref": "#/components/schemas/UcmCampaign"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List UCM campaigns",
+        "tags": [
+          "UCM"
+        ]
+      },
+      "post": {
+        "operationId": "create_ucm_campaign",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "target_components": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "name",
+                  "target_components"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UcmCampaign"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create UCM campaign",
+        "tags": [
+          "UCM"
+        ]
+      }
+    },
+    "/ucm/campaigns/{campaign_id}": {
+      "get": {
+        "operationId": "get_ucm_campaign",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UcmCampaign"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get UCM campaign detail",
+        "tags": [
+          "UCM"
+        ]
+      }
+    },
+    "/ucm/campaigns/{campaign_id}/execute": {
+      "post": {
+        "operationId": "execute_ucm_campaign",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UcmCampaign"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Execute UCM campaign",
+        "tags": [
+          "UCM"
+        ]
+      }
+    },
+    "/ucm/campaigns/{campaign_id}/rollback": {
+      "post": {
+        "operationId": "rollback_ucm_campaign",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UcmCampaign"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Rollback UCM campaign",
+        "tags": [
+          "UCM"
+        ]
+      }
+    },
+    "/update-provenance": {
+      "get": {
+        "operationId": "list_update_provenance",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "value": {
+                      "items": {
+                        "$ref": "#/components/schemas/UpdateProvenanceEntry"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Update provenance log (UNECE R156 §7.1)",
+        "tags": [
+          "RXSWIN"
+        ]
+      }
+    },
     "/updates": {
       "get": {
         "operationId": "list_updates",
@@ -1152,6 +1952,96 @@
         "summary": "List software updates (§7.18)",
         "tags": [
           "Updates"
+        ]
+      }
+    },
+    "/x-uds/components/{component_id}/security-access": {
+      "post": {
+        "operationId": "security_access",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UdsSecurityAccessRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UdsSecurityAccessResponse"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "UDS Security Access seed/key protocol (0x27)",
+        "tags": [
+          "UDS-Security"
+        ]
+      }
+    },
+    "/x-uds/components/{component_id}/security-levels": {
+      "get": {
+        "operationId": "list_security_levels",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "value": {
+                      "items": {
+                        "$ref": "#/components/schemas/UdsSecurityLevel"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List UDS security levels for component (ISO 14229 §9)",
+        "tags": [
+          "UDS-Security"
         ]
       }
     }
@@ -1214,6 +2104,22 @@
     {
       "description": "Software updates (§7.18)",
       "name": "Updates"
+    },
+    {
+      "description": "UNECE R156 RXSWIN tracking",
+      "name": "RXSWIN"
+    },
+    {
+      "description": "ISO/SAE 21434 Threat Analysis",
+      "name": "TARA"
+    },
+    {
+      "description": "ISO 14229 UDS Security Access",
+      "name": "UDS-Security"
+    },
+    {
+      "description": "AUTOSAR UCM Campaign Management",
+      "name": "UCM"
     }
   ]
 }

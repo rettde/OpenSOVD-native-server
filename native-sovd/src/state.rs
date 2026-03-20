@@ -22,6 +22,7 @@ use native_interfaces::firmware_verify::FirmwareVerifier;
 use native_interfaces::oem::OemProfile;
 use native_interfaces::sovd::SovdSoftwarePackage;
 use native_interfaces::sovd::{SovdOperationExecution, SovdProximityChallenge};
+use native_interfaces::sovd::{RxswinEntry, TaraAsset, TaraThreatEntry, UcmCampaign, UpdateProvenanceEntry};
 use native_interfaces::{ComponentBackend, EntityBackend, ExtendedDiagBackend};
 
 // ── Sub-state: Diagnostics ──────────────────────────────────────────────────
@@ -50,6 +51,8 @@ pub struct SecurityState {
     pub audit_log: Arc<AuditLog>,
     /// Per-client rate limiter (A2.5) — None if disabled
     pub rate_limiter: Option<crate::rate_limit::RateLimiter>,
+    /// Whether authentication is enabled at runtime (for compliance evidence)
+    pub auth_enabled: bool,
 }
 
 // ── Sub-state: Runtime ──────────────────────────────────────────────────────
@@ -59,16 +62,32 @@ pub struct SecurityState {
 pub struct RuntimeState {
     /// System health monitor (CPU, memory, uptime)
     pub health: Arc<HealthMonitor>,
+    /// Maximum entries in bounded stores before FIFO eviction (C4 fix, default 10 000)
+    pub max_store_entries: usize,
     /// Execution history: executionId → SovdOperationExecution
     pub execution_store: Arc<DashMap<String, SovdOperationExecution>>,
+    /// FIFO insertion order for execution_store eviction (P1 fix)
+    pub execution_order: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
     /// Proximity challenge store: challengeId → SovdProximityChallenge
     pub proximity_store: Arc<DashMap<String, SovdProximityChallenge>>,
+    /// FIFO insertion order for proximity_store eviction (P1 fix)
+    pub proximity_order: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
     /// Software package lifecycle store: "{component_id}/{package_id}" → SovdSoftwarePackage
     pub package_store: Arc<DashMap<String, SovdSoftwarePackage>>,
     /// Runtime feature flags (E2.4) — lock-free atomic toggles
     pub feature_flags: native_interfaces::SharedFeatureFlags,
     /// Firmware signature verifier (F12, ISO 24089)
     pub firmware_verifier: Arc<dyn FirmwareVerifier>,
+    /// RXSWIN store: componentId → RxswinEntry (F15, UNECE R156)
+    pub rxswin_store: Arc<DashMap<String, RxswinEntry>>,
+    /// Update provenance log (F15, UNECE R156 §7.1)
+    pub provenance_log: Arc<parking_lot::RwLock<Vec<UpdateProvenanceEntry>>>,
+    /// TARA asset inventory (F16, ISO/SAE 21434)
+    pub tara_assets: Arc<parking_lot::RwLock<Vec<TaraAsset>>>,
+    /// TARA threat entries (F16, ISO/SAE 21434)
+    pub tara_threats: Arc<parking_lot::RwLock<Vec<TaraThreatEntry>>>,
+    /// UCM campaign store: campaignId → UcmCampaign (F18, AUTOSAR R24-11)
+    pub ucm_campaigns: Arc<DashMap<String, UcmCampaign>>,
 }
 
 // ── Top-level AppState ──────────────────────────────────────────────────────

@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 mod tls_reload;
+mod watchdog;
 
 use std::sync::Arc;
 
@@ -699,14 +700,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 None
             },
+            auth_enabled: config.auth.enabled,
         },
         runtime: native_sovd::RuntimeState {
             health,
+            max_store_entries: 10_000,
             execution_store: Arc::new(DashMap::new()),
+            execution_order: Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
             proximity_store: Arc::new(DashMap::new()),
+            proximity_order: Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
             package_store: Arc::new(DashMap::new()),
             feature_flags: Arc::new(native_interfaces::FeatureFlags::new()),
             firmware_verifier,
+            rxswin_store: Arc::new(DashMap::new()),
+            provenance_log: Arc::new(parking_lot::RwLock::new(Vec::new())),
+            tara_assets: Arc::new(parking_lot::RwLock::new(Vec::new())),
+            tara_threats: Arc::new(parking_lot::RwLock::new(Vec::new())),
+            ucm_campaigns: Arc::new(DashMap::new()),
         },
         data_catalog: Arc::new(native_interfaces::StaticDataCatalogProvider::new()),
     };
@@ -789,6 +799,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
 
         info!("SOVD API listening on https://{bind_addr}/sovd/v1 (TLS enabled)");
+        watchdog::notify_ready();
+        watchdog::spawn_watchdog_task();
         axum_server::bind_rustls(bind_addr.parse()?, tls_config)
             .handle(handle)
             .serve(app.into_make_service())
@@ -798,12 +810,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
         info!("SOVD API listening on http://{bind_addr}/sovd/v1");
         info!("Health endpoint: http://{bind_addr}/sovd/v1/health");
+        watchdog::notify_ready();
+        watchdog::spawn_watchdog_task();
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown_signal())
             .await?;
     }
 
     // ── Post-shutdown cleanup ───────────────────────────────────────────
+    watchdog::notify_stopping();
     info!("Server stopped — running cleanup");
     audit_log.flush();
     info!("Audit log flushed");

@@ -8,7 +8,7 @@
 
 [package]
 name = "demo-ecu"
-version = "0.13.0-beta"
+version = "0.17.0-rc"
 edition.workspace = true
 license.workspace = true
 publish = false

@@ -8,7 +8,7 @@ edition = "2021"
 license = "Apache-2.0"
 homepage = "https://github.com/eclipse-opensovd"
 repository = "https://github.com/eclipse-opensovd/OpenSOVD-native-server"
-rust-version = "1.75"
+rust-version = "1.88"
 
 [workspace]
 resolver = "2"
@@ -92,6 +92,7 @@ sha2 = "0.10"
 
 # ── Firmware signature verification (F12, ISO 24089) ────────────────────────
 ed25519-dalek = { version = "2", features = ["pkcs8", "pem"] }
+rand = "0.8"
 
 # ── WebSocket (bridge transport, F3) ────────────────────────────────────────
 tokio-tungstenite = { version = "0.24", default-features = false, features = ["handshake", "connect"] }
@@ -106,9 +107,15 @@ criterion = { version = "0.5", default-features = false }
 # ── vSomeIP FFI ──────────────────────────────────────────────────────────────
 libc = "0.2"
 
+# ── systemd integration (sd_notify watchdog, F19) ───────────────────────────
+sd-notify = "0.4"
+
 # ── Workspace-wide lint policy (quality gate) ──────────────────────────────
 # Every crate inherits these via `[lints] workspace = true`.
 # Per-crate #![allow(...)] whitelists justified exceptions only.
+[workspace.lints.rust]
+unsafe_code = "deny"
+
 [workspace.lints.clippy]
 pedantic      = { level = "warn", priority = -1 }
 unwrap_used   = "warn"

@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/rettde/OpenSOVD-native-server/actions/workflows/ci.yml/badge.svg)](https://github.com/rettde/OpenSOVD-native-server/actions)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/Rust-1.88%2B-orange.svg)](https://www.rust-lang.org/)
 
 ---
 
@@ -123,25 +123,29 @@ All optional features are disabled by default to keep the dependency footprint m
 | `vault` | native-core | HashiCorp Vault KV v2 secret provider (auto-populates auth secrets) |
 | `ws-bridge` | native-core | WebSocket bridge transport via `tokio-tungstenite` |
 | `otlp` | native-server | OpenTelemetry OTLP trace export (Jaeger, Tempo, etc.) |
+| `systemd` | native-server | sd_notify integration: `READY=1`, `WATCHDOG=1`, `STOPPING=1` (Linux HPC) |
 | `vsomeip-ffi` | native-comm-someip | Real COVESA/vsomeip C FFI bindings (requires `libvsomeip3`) |
 
 ```bash
 # Build with specific features
 cargo build -p opensovd-native-server --features vault,ws-bridge
 
+# Build for Linux HPC with systemd watchdog
+cargo build -p opensovd-native-server --features systemd --release
+
 # Build with all optional features
-cargo build -p opensovd-native-server --features vault,ws-bridge,otlp,persist
+cargo build -p opensovd-native-server --features vault,ws-bridge,otlp,persist,systemd
 ```
 
 ## SOVD v1 API Endpoints
+
+### Core SOVD (ISO 17978-3)
 
 | Method   | Path                                              | SOVD § | Description                    |
 |----------|---------------------------------------------------|--------|--------------------------------|
 | `GET`    | `/sovd/v1`                                        | §5     | Server info & discovery        |
 | `GET`    | `/sovd/v1/components`                             | §7.1   | List components (paginated)    |
 | `GET`    | `/sovd/v1/components/{id}`                        | §7.1   | Get component details          |
-| `POST`   | `/sovd/v1/components/{id}/connect`                | §7.1   | Connect to ECU via DoIP        |
-| `POST`   | `/sovd/v1/components/{id}/disconnect`             | §7.1   | Disconnect from ECU            |
 | `GET`    | `/sovd/v1/components/{id}/capabilities`           | §7.3   | Component capabilities         |
 | `POST`   | `/sovd/v1/components/{id}/lock`                   | §7.4   | Acquire exclusive lock         |
 | `GET`    | `/sovd/v1/components/{id}/lock`                   | §7.4   | Get lock status                |
@@ -162,18 +166,116 @@ cargo build -p opensovd-native-server --features vault,ws-bridge,otlp,persist
 | `GET`    | `/sovd/v1/components/{id}/operations/{opId}/executions` | §7.7 | List executions           |
 | `GET`    | `.../executions/{execId}`                         | §7.7   | Get execution status           |
 | `DELETE` | `.../executions/{execId}`                         | §7.7   | Cancel execution               |
-| `GET`    | `/sovd/v1/components/{id}/config`                 | §7.8   | Read component config          |
-| `PUT`    | `/sovd/v1/components/{id}/config`                 | §7.8   | Write component config         |
-| `POST`   | `/sovd/v1/components/{id}/proximityChallenge`     | §7.9   | Create proximity challenge     |
-| `GET`    | `.../proximityChallenge/{challengeId}`            | §7.9   | Get challenge status           |
+| `GET`    | `/sovd/v1/components/{id}/configurations`         | §7.12  | Read component config          |
+| `PUT`    | `/sovd/v1/components/{id}/configurations`         | §7.12  | Write component config         |
+| `POST`   | `/sovd/v1/components/{id}/proximity-challenge`    | §7.9   | Create proximity challenge     |
+| `GET`    | `.../proximity-challenge/{challengeId}`           | §7.9   | Get challenge status           |
 | `GET`    | `/sovd/v1/components/{id}/logs`                   | §7.10  | Get diagnostic logs            |
 | `GET`    | `/sovd/v1/components/{id}/faults/subscribe`       | §7.11  | SSE fault subscription         |
 | `GET`    | `/sovd/v1/groups`                                 | §7.2   | List groups (paginated)        |
 | `GET`    | `/sovd/v1/groups/{groupId}`                       | §7.2   | Get group details              |
 | `GET`    | `/sovd/v1/groups/{groupId}/components`            | §7.2   | Get group members              |
-| `POST`   | `/sovd/v1/components/{id}/flash`                  | —      | OTA firmware flash             |
-| `GET`    | `/sovd/v1/diag/keepalive`                         | —      | TesterPresent keepalive status |
 | `GET`    | `/sovd/v1/health`                                 | —      | System health check            |
+| `GET`    | `/sovd/v1/system-info`                            | —      | Runtime system info            |
+| `GET`    | `/sovd/v1/audit`                                  | —      | Audit trail log                |
+| `GET`    | `/sovd/v1/audit/export`                           | —      | Signed audit export (hash chain) |
+| `GET`    | `/sovd/v1/compliance-evidence`                    | —      | ISO 17978-3 / UNECE R155 evidence |
+
+### Software Packages (§5.5.10)
+
+| Method   | Path                                                          | Description                    |
+|----------|---------------------------------------------------------------|--------------------------------|
+| `GET`    | `/sovd/v1/components/{id}/software-packages`                  | List software packages         |
+| `POST`   | `/sovd/v1/components/{id}/software-packages/{pkgId}`          | Install package                |
+| `GET`    | `/sovd/v1/components/{id}/software-packages/{pkgId}/status`   | Package transfer status        |
+| `POST`   | `/sovd/v1/components/{id}/software-packages/{pkgId}/activate` | Activate package               |
+| `POST`   | `/sovd/v1/components/{id}/software-packages/{pkgId}/rollback` | Rollback package               |
+
+### Apps, Funcs, Areas (ISO 17978-3 §4.2.3)
+
+| Method   | Path                                              | Description                    |
+|----------|---------------------------------------------------|--------------------------------|
+| `GET`    | `/sovd/v1/apps`                                   | List applications              |
+| `GET`    | `/sovd/v1/apps/{appId}`                           | Get application details        |
+| `GET`    | `/sovd/v1/apps/{appId}/capabilities`              | App capabilities               |
+| `GET`    | `/sovd/v1/apps/{appId}/data`                      | List app data                  |
+| `GET`    | `/sovd/v1/apps/{appId}/data/{dataId}`             | Read app data                  |
+| `GET`    | `/sovd/v1/apps/{appId}/operations`                | List app operations            |
+| `POST`   | `/sovd/v1/apps/{appId}/operations/{opId}`         | Execute app operation          |
+| `GET`    | `/sovd/v1/funcs`                                  | List functions                 |
+| `GET`    | `/sovd/v1/funcs/{funcId}`                         | Get function details           |
+| `GET`    | `/sovd/v1/funcs/{funcId}/data`                    | List func data                 |
+| `GET`    | `/sovd/v1/funcs/{funcId}/data/{dataId}`           | Read func data                 |
+| `GET`    | `/sovd/v1/areas`                                  | List areas                     |
+| `GET`    | `/sovd/v1/areas/{areaId}`                         | Get area details               |
+
+### RXSWIN Tracking — UNECE R156 (F15)
+
+| Method   | Path                                              | Description                    |
+|----------|---------------------------------------------------|--------------------------------|
+| `GET`    | `/sovd/v1/rxswin`                                 | List all RXSWIN entries        |
+| `GET`    | `/sovd/v1/rxswin/report`                          | Vehicle-level RXSWIN report    |
+| `GET`    | `/sovd/v1/rxswin/{component_id}`                  | Per-component RXSWIN           |
+| `GET`    | `/sovd/v1/update-provenance`                      | Update provenance log          |
+
+### TARA — ISO/SAE 21434 (F16)
+
+| Method   | Path                                              | Description                    |
+|----------|---------------------------------------------------|--------------------------------|
+| `GET`    | `/sovd/v1/tara/assets`                            | TARA asset inventory           |
+| `GET`    | `/sovd/v1/tara/threats`                           | TARA threat entries            |
+| `GET`    | `/sovd/v1/tara/export`                            | Full TARA export document      |
+
+### UDS Security Access — ISO 14229 (F17)
+
+| Method   | Path                                              | Description                    |
+|----------|---------------------------------------------------|--------------------------------|
+| `GET`    | `/sovd/v1/x-uds/components/{id}/security-levels`  | UDS security levels            |
+| `POST`   | `/sovd/v1/x-uds/components/{id}/security-access`  | Seed/key protocol (0x27)       |
+
+### UCM Campaigns — AUTOSAR R24-11 (F18)
+
+| Method   | Path                                              | Description                    |
+|----------|---------------------------------------------------|--------------------------------|
+| `GET`    | `/sovd/v1/ucm/campaigns`                          | List UCM campaigns             |
+| `POST`   | `/sovd/v1/ucm/campaigns`                          | Create UCM campaign            |
+| `GET`    | `/sovd/v1/ucm/campaigns/{id}`                     | Get campaign detail            |
+| `POST`   | `/sovd/v1/ucm/campaigns/{id}/execute`             | Execute campaign               |
+| `POST`   | `/sovd/v1/ucm/campaigns/{id}/rollback`            | Rollback campaign              |
+
+### Vendor Extensions (x-uds)
+
+| Method   | Path                                              | Description                    |
+|----------|---------------------------------------------------|--------------------------------|
+| `POST`   | `/sovd/v1/x-uds/components/{id}/connect`          | Connect to ECU via DoIP        |
+| `POST`   | `/sovd/v1/x-uds/components/{id}/disconnect`       | Disconnect from ECU            |
+| `POST`   | `/sovd/v1/x-uds/components/{id}/io/{dataId}`      | UDS IO Control (0x2F)          |
+| `POST`   | `/sovd/v1/x-uds/components/{id}/comm-control`     | Communication Control (0x28)   |
+| `POST`   | `/sovd/v1/x-uds/components/{id}/dtc-setting`      | Control DTC Setting (0x85)     |
+| `GET`    | `/sovd/v1/x-uds/components/{id}/memory`           | Read Memory By Address (0x23)  |
+| `PUT`    | `/sovd/v1/x-uds/components/{id}/memory`           | Write Memory By Address (0x3D) |
+| `POST`   | `/sovd/v1/x-uds/components/{id}/flash`            | Request Download / Flash       |
+| `GET`    | `/sovd/v1/x-uds/diag/keepalive`                   | TesterPresent keepalive status |
+
+### Operational & Admin Endpoints
+
+| Method    | Path                                              | Description                    |
+|-----------|---------------------------------------------------|--------------------------------|
+| `GET`     | `/sovd/v1/version-info`                           | SOVD version info (§4.1)      |
+| `GET`     | `/sovd/v1/docs`                                   | Capability docs (§5.1)        |
+| `GET`     | `/sovd/v1/$metadata`                              | OData metadata (§5.2)         |
+| `GET`     | `/sovd/v1/components/{id}/snapshot`               | Diagnostic snapshot            |
+| `GET`     | `/sovd/v1/export/faults`                          | NDJSON fault export (streaming)|
+| `GET`     | `/sovd/v1/schema/data-catalog`                    | Schema introspection           |
+| `GET`     | `/sovd/v1/components/{id}/data/subscribe`         | SSE data-change stream         |
+| `GET`     | `/metrics`                                        | Prometheus scrape (config-gated)|
+| `GET`     | `/openapi.json`                                   | OpenAPI 3.1 spec (CDF)        |
+| `GET`     | `/healthz`                                        | K8s liveness probe             |
+| `GET`     | `/readyz`                                         | K8s readiness probe            |
+| `GET`     | `/x-admin/backup`                                 | Create state backup            |
+| `POST`    | `/x-admin/restore`                                | Restore state backup           |
+| `GET`     | `/x-admin/features`                               | List feature flags             |
+| `GET/PUT` | `/x-admin/features/{flag}`                        | Get/set feature flag           |
 
 > All collection endpoints support OData pagination via `$top` and `$skip` query parameters.
 
@@ -181,7 +283,7 @@ cargo build -p opensovd-native-server --features vault,ws-bridge,otlp,persist
 
 ### Prerequisites
 
-- Rust 1.75+ (`rustup` recommended)
+- Rust 1.88+ (`rustup` recommended)
 - For SOME/IP: `libvsomeip3` (optional, stub mode without it)
 
 ### Try it with the demo-ecu
