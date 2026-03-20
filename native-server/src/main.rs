@@ -142,10 +142,10 @@ impl AppConfig {
         // TLS: cert and key must both be present or both absent
         match (&self.server.cert_path, &self.server.key_path) {
             (Some(_), None) => {
-                errors.push("server.cert_path is set but server.key_path is missing".into())
+                errors.push("server.cert_path is set but server.key_path is missing".into());
             }
             (None, Some(_)) => {
-                errors.push("server.key_path is set but server.cert_path is missing".into())
+                errors.push("server.key_path is set but server.cert_path is missing".into());
             }
             (Some(cert), Some(key)) => {
                 if !std::path::Path::new(cert).exists() {
