@@ -113,7 +113,7 @@
 | F8 | **SOME/IP real transport** | Validate `native-comm-someip` FFI against real COVESA/vsomeip | Low | L |
 | F9 | ~~SQL storage backend~~ | **Implemented** as Snapshot/Rollback (AUTOSAR `ara::per` / S-CORE pattern) — see above | ✅ | — |
 | F12 | **SW package signature verification** | Firmware integrity check before activation (ISO 24089) | High | M |
-| F13 | **Horizontal scaling** | Stateless mode with external state store (Redis / etcd) | Medium | L |
+| F13 | ~~Horizontal scaling~~ | **Removed** — no In-Vehicle use case; AUTOSAR HPC is always single-instance | — | — |
 | F14 | **mTLS backend connections** | TLS for Gateway → CDA / backend links | Medium | S |
 | F15 | **OIDC E2E validation** | Full auth flow tested against real IdP (Keycloak) | Medium | S |
 
