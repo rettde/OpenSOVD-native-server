@@ -42,8 +42,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      # rustfmt does not skip cfg-gated mod declarations — create empty
+      # stubs for any OEM modules that are .gitignored.
+      - name: Create OEM stubs + check formatting
+        run: |
+          grep -oP '(?<=cfg\(has_oem_)\w+' native-sovd/src/lib.rs | while read name; do
+            f="native-sovd/src/oem_${name}.rs"
+            [ -f "$f" ] || echo "// fmt stub" > "$f"
+          done
+          cargo fmt --all -- --check
 
   build:
     name: Build
