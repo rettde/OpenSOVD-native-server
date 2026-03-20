@@ -12,7 +12,7 @@
 #   docker run -v /path/to/config:/config -p 8080:8080 opensovd-native:latest
 
 # ── Stage 1: Build ──────────────────────────────────────────────────────────
-FROM rust:1.80-bookworm AS builder
+FROM rust:1.85-bookworm AS builder
 
 WORKDIR /build
 COPY . .
@@ -22,6 +22,9 @@ RUN if [ ! -f native-sovd/src/oem_mbds.rs ]; then \
       echo '// Docker build stub — proprietary OEM profile not present' \
         > native-sovd/src/oem_mbds.rs; \
     fi
+
+# Ensure a config file exists (empty defaults are fine — all values have serde defaults)
+RUN test -f opensovd-native-server.toml || echo '# Default config — override via env or volume mount' > opensovd-native-server.toml
 
 RUN cargo build --release --workspace \
     && strip target/release/opensovd-native-server
