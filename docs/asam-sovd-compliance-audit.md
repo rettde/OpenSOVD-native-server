@@ -1,18 +1,18 @@
-# ASAM SOVD V1.0.0 Compliance Audit
+# ASAM SOVD V1.1.0 Compliance Audit
 
 **Project:** OpenSOVD-native-server v0.12.0
 **Date:** 2026-03-20 (updated from v0.8.1 audit of 2026-03-16)
-**Scope:** Full codebase audit against ASAM SOVD V1.0.0 (Association for Standardization of Automation and Measuring Systems — Service-Oriented Vehicle Diagnostics API Specification)
-**Basis:** ASAM SOVD BS V1.0.0, publicly available ASAM presentations, Softing SOVD documentation, Vector SOVD whitepaper, Eclipse OpenSOVD design references
+**Scope:** Full codebase audit against ASAM SOVD V1.1.0 (Association for Standardization of Automation and Measuring Systems — Service-Oriented Vehicle Diagnostics API Specification)
+**Basis:** ASAM SOVD V1.1.0 / ISO 17978-3, publicly available ASAM presentations, Softing SOVD documentation, Vector SOVD whitepaper, Eclipse OpenSOVD design references
 **Auditor:** AI-assisted (Windsurf Cascade), human-reviewed
 
 ---
 
 ## 1. Executive Summary
 
-The OpenSOVD-native-server implements the SOVD REST API as specified in ISO 17978-3, which is the ISO publication of the ASAM SOVD standard. This audit evaluates the implementation against the **original ASAM SOVD V1.0.0** specification, using all available interpretations from public documentation.
+The OpenSOVD-native-server implements the SOVD REST API as specified in ISO 17978-3, which is the ISO publication of the ASAM SOVD standard. This audit evaluates the implementation against the **original ASAM SOVD V1.1.0** specification, using all available interpretations from public documentation.
 
-**Overall assessment: ~98% ASAM SOVD V1.0.0 conformant** — The core diagnostic resource model (data, faults, operations, locking, capabilities, groups, logs, events) is fully implemented. Three critical URL path deviations were identified and **fixed during the original v0.8.1 audit**. Since then, Apps/Funcs entities (W1.3) and Software-Package lifecycle (W1.4) have been implemented, closing the two remaining FAIL items. Only `/areas` remains unimplemented (acceptable scope limitation for a gateway server).
+**Overall assessment: ~98% ASAM SOVD V1.1.0 conformant** — The core diagnostic resource model (data, faults, operations, locking, capabilities, groups, logs, events) is fully implemented. Three critical URL path deviations were identified and **fixed during the original v0.8.1 audit**. Since then, Apps/Funcs entities (W1.3) and Software-Package lifecycle (W1.4) have been implemented, closing the two remaining FAIL items. Only `/areas` remains unimplemented (acceptable scope limitation for a gateway server).
 
 | Category | Conformance | Notes |
 |----------|:-----------:|-------|
@@ -45,7 +45,7 @@ The OpenSOVD-native-server implements the SOVD REST API as specified in ISO 1797
 
 ### 2.1 FAIL — Missing Entity Types: `/apps`, `/areas`, `/funcs`
 
-**ASAM SOVD V1.0.0 §4.2.3** defines five entity collection types:
+**ASAM SOVD V1.1.0 §4.2.3** defines five entity collection types:
 
 | Entity Collection | Description | Implemented? |
 |-------------------|-------------|:------------:|
@@ -68,7 +68,7 @@ The OpenSOVD-native-server implements the SOVD REST API as specified in ISO 1797
 **Previous implementation:** `GET/POST /sovd/v1/components/{id}/mode`
 **Fixed to:** `GET/POST /sovd/v1/components/{id}/modes`
 
-**ASAM SOVD V1.0.0 §5.5.4** specifies:
+**ASAM SOVD V1.1.0 §5.5.4** specifies:
 ```
 GET  {entityPath}/modes          — List all available modes
 PUT  {entityPath}/modes/{modeId} — Set a specific mode
@@ -86,7 +86,7 @@ POST {entityPath}/modes          — Activate a mode
 **Previous implementation:** `GET/PUT /sovd/v1/components/{id}/config`
 **Fixed to:** `GET/PUT /sovd/v1/components/{id}/configurations`
 
-**ASAM SOVD V1.0.0 §5.5.8** specifies:
+**ASAM SOVD V1.1.0 §5.5.8** specifies:
 ```
 GET {entityPath}/configurations
 PUT {entityPath}/configurations
@@ -101,7 +101,7 @@ Path now matches the ASAM specification exactly.
 **Previous implementation:** `POST/GET /sovd/v1/components/{id}/proximityChallenge[/{challengeId}]`
 **Fixed to:** `POST/GET /sovd/v1/components/{id}/proximity-challenge[/{challengeId}]`
 
-**ASAM SOVD V1.0.0 §5.5.11** specifies kebab-case for multi-word resource names:
+**ASAM SOVD V1.1.0 §5.5.11** specifies kebab-case for multi-word resource names:
 - `proximity-challenge` (not `proximityChallenge`)
 - `software-packages` (not `softwarePackages`)
 - `bulk-read` / `bulk-write` (already correct)
@@ -110,7 +110,7 @@ Path now matches the ASAM specification exactly.
 
 ### 2.5 FAIL — Missing Software Packages Resource
 
-**ASAM SOVD V1.0.0 §5.5.10** defines software package management:
+**ASAM SOVD V1.1.0 §5.5.10** defines software package management:
 
 ```
 GET  {entityPath}/software-packages                     — List packages
@@ -133,7 +133,7 @@ GET    /sovd/v1/components/{id}/lock
 DELETE /sovd/v1/components/{id}/lock
 ```
 
-**ASAM SOVD V1.0.0 §5.5.3** specifies:
+**ASAM SOVD V1.1.0 §5.5.3** specifies:
 ```
 GET    {entityPath}/lock
 POST   {entityPath}/lock
