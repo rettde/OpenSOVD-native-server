@@ -36,6 +36,9 @@ tarpaulin-report.html
 # The generic oem_sample.rs serves as a template for custom implementations.
 native-sovd/src/oem_mbds.rs
 MBDS_CONFORMANCE_AUDIT.md
+MBDS-README.md
+MBDS-proprietary.zip
+docs/adr/ADR-0001-mbds-specific-adaptations.md
 
 # External reference code (not part of this project)
 /CDA/
