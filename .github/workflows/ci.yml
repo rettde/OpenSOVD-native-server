@@ -42,10 +42,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      # oem_mbds.rs is .gitignored (proprietary OEM profile). Create an empty
+      # oem_mbds.rs is .gitignored (proprietary OEM profile). Create a minimal
       # stub so rustfmt can resolve the #[cfg(has_oem_mbds)] mod declaration.
-      - run: touch native-sovd/src/oem_mbds.rs
-      - run: cargo fmt --all -- --check
+      - name: Create OEM stub + check formatting
+        run: |
+          echo '// CI stub — real file is .gitignored (proprietary OEM profile)' > native-sovd/src/oem_mbds.rs
+          cargo fmt --all -- --check
 
   build:
     name: Build
