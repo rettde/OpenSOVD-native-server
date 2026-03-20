@@ -81,7 +81,15 @@ SOVD Clients (HTTP/JSON)
 - **SOME/IP** — [COVESA/vsomeip](https://github.com/COVESA/vsomeip) FFI bindings (optional)
 - **Health Monitoring** — CPU, memory, system metrics via `/sovd/v1/health`
 - **Prometheus Metrics** — `sovd_http_requests_total`, `sovd_http_request_duration_seconds`
-- **269 tests**, Clippy pedantic clean, `#![forbid(unsafe_code)]` (except vSomeIP FFI)
+- **OEM Plugin Architecture** — `OemProfile` trait with AuthPolicy, AuthzPolicy, EntityIdPolicy, CdfPolicy sub-traits; compile-time auto-detection of vendor profiles
+- **Feature Flags** — Lock-free atomic runtime toggles for audit, history, rate limiting, bridge; admin REST API at `/x-admin/features`
+- **Historical Storage** — Time-range queries on faults and audit entries with pluggable `StorageBackend` trait and background compaction
+- **Backup/Restore** — Full diagnostic state snapshot (faults + audit) via admin API with tamper-evident audit trail
+- **TLS Hot-Reload** — Certificate file polling (30s) with graceful reload; supports TLS + mTLS
+- **Multi-Tenant** — JWT `tenant_id` claim, namespace isolation, per-tenant policy
+- **Cloud Bridge** — Feature-gated vehicle↔cloud brokered session management
+- **Data Catalog** — COVESA VSS ontology, semantic metadata, NDJSON batch export, schema introspection
+- **398 tests**, Clippy pedantic clean, `#![forbid(unsafe_code)]` (except vSomeIP FFI)
 
 ## Workspace Structure
 
@@ -234,43 +242,31 @@ point toward a clear evolution: from a standards-compliant REST gateway toward a
 enterprise-ready diagnostic platform** for software-defined vehicles and HPC architectures.
 This roadmap captures the planned expansion in four waves.
 
-| Wave | Theme | Target scope |
-|------|-------|--------------|
-| **Wave 1** | Security & entity model | Fine-grained authz, audit trail, full `apps`/`funcs` support, software-package lifecycle |
-| **Wave 2** | HPC diagnostics & history | KPI/process/system-info resources, historical diagnostic storage, fault debouncing |
-| **Wave 3** | Enterprise & fleet | Cloud bridge mode, multi-tenant model, variant-aware discovery, zero-trust hardening |
-| **Wave 4** | Ecosystem integration | UDS2SOVD compatibility layer, service-app plugin ecosystem, advanced OTA orchestration |
+| Wave | Theme | Status |
+|------|-------|--------|
+| **Wave 1** | Security & entity model | ✅ Complete |
+| **Wave 2** | HPC diagnostics & history | ✅ Complete |
+| **Wave 3** | Enterprise & fleet | ✅ Complete |
+| **Wave 4** | AI-ready diagnostic data | ✅ Complete |
 
-### Wave 1 — Security & Entity Model
+### Wave 1 — Security & Entity Model ✅
 
-- **Fine-grained authorization** — Per-resource, per-operation, and per-entity policies beyond token-level auth.
-- **Diagnostic audit trail** — Tamper-resistant log of who read, wrote, executed, or cleared what.
-- **Full `apps` / `funcs` entities** — Promote the current stubs to real entity collections with nested resources.
-- **Software-package lifecycle** — Manifest upload, progress tracking, rollback policy, and OTA status model.
+Fine-grained AuthZ (per-resource, per-entity), SHA-256 hash-chained audit trail, full `apps`/`funcs` entities, software-package lifecycle (install/activate/rollback).
 
-### Wave 2 — HPC Diagnostics & History
+### Wave 2 — HPC Diagnostics & History ✅
 
-- **KPI / system-info resources** — Expose CPU, memory, process, and service-level metrics as SOVD data resources.
-- **Historical diagnostic storage** — Persist fault and KPI history for correlation and trend analysis.
-- **Fault debouncing & operation cycles** — Suppress transient faults during expected phases (startup, update).
-- **Time-based monitoring** — Periodic sampling and threshold-based alerting for HPC health indicators.
+KPI/system-info resources, historical diagnostic storage with time-range queries and background compaction, fault debouncing (FaultGovernor), per-client rate limiting, secrets abstraction, backup/restore, feature flags, TLS hot-reload, load tests (k6 + Criterion), fault injection tests.
 
-### Wave 3 — Enterprise & Fleet
+### Wave 3 — Enterprise & Fleet ✅
 
-- **Cloud bridge mode** — Brokered remote access without exposing vehicles directly to the public internet.
-- **Multi-tenant / workshop isolation** — Tenant boundaries for fleet operators, suppliers, and workshops.
-- **Variant-aware discovery** — Installation-variant and software-variant differentiation in capabilities and CDF.
-- **Zero-trust hardening** — End-to-end mutual authentication and dynamic, fine-grained permission management.
+Cloud bridge mode (BridgeTransport trait), multi-tenant isolation (JWT tenant_id + namespace), variant-aware discovery, zero-trust hardening, canary deployment routing, signed audit export, compliance evidence endpoint.
 
-### Wave 4 — Ecosystem Integration
+### Wave 4 — AI-Ready Diagnostic Data ✅
 
-- **UDS2SOVD compatibility layer** — Allow legacy UDS-based testers to interact with the SOVD stack.
-- **Service App plugin model** — Clean abstraction for OEM-specific diagnostic routines (flash master, DTC clear, inspections).
-- **Advanced OTA orchestration** — Uptane-aligned update workflows with campaign management and rollout policies.
-- **ML/predictive maintenance interfaces** — Stable KPI/history APIs for external analytics without embedding ML in the server core.
+COVESA VSS semantic data catalog, NDJSON batch export (snapshot + faults), fault ontology enrichment (affectedSubsystem, correlatedSignals, classificationTags), schema introspection, SSE data-change streams, data contract versioning, reproducibility metadata.
 
-> For the full research, gap analysis, and prioritization behind this roadmap see
-> [docs/sovd-server-feature-inspiration.md](docs/sovd-server-feature-inspiration.md).
+> For the full research, gap analysis, and prioritization see
+> [docs/integrated-roadmap.md](docs/integrated-roadmap.md).
 
 ## License
 
