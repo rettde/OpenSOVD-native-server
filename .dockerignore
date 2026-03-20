@@ -1,0 +1,55 @@
+# ── Files excluded from Docker build context ─────────────────────────
+# Keep this in sync with .gitignore where applicable.
+
+# Git metadata
+.git/
+.gitignore
+.github/
+
+# Rust build artifacts (rebuilt inside container)
+/target/
+**/*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment / secrets — never ship into images
+.env
+.env.*
+*.pem
+*.key
+*.p12
+
+# Runtime data (sled persistence)
+/data/
+*.sled/
+
+# Coverage
+lcov.info
+tarpaulin-report.html
+
+# Proprietary OEM files
+MBDS_CONFORMANCE_AUDIT.md
+MBDS-README.md
+MBDS-proprietary.zip
+
+# External reference code
+/CDA/
+
+# Node / npm (CDF validator tooling)
+node_modules/
+package.json
+package-lock.json
+/sovd-cdf-validator/
+
+# Docker-specific: no need to send the Dockerfile itself
+deploy/
