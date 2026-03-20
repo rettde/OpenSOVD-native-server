@@ -588,6 +588,6 @@ cargo build --release --target aarch64-unknown-linux-gnu
 
 - **[integrated-roadmap.md](integrated-roadmap.md)** — Feature-Roadmap (implementiert + geplant)
 - **[future-work-implementation-plan.md](future-work-implementation-plan.md)** — Offene Punkte (F5, F8)
-- **[asam-sovd-compliance-audit.md](asam-sovd-compliance-audit.md)** — ASAM SOVD V1.0.0 Compliance
+- **[iso-17978-3-compliance-audit.md](iso-17978-3-compliance-audit.md)** — ISO 17978-3 Compliance
 - **[security-audit.md](security-audit.md)** — Security Audit
 - **[adr/](adr/README.md)** — Architecture Decision Records (18 ADRs)

@@ -1,18 +1,18 @@
-# ASAM SOVD V1.1.0 Compliance Audit
+# ISO 17978-3 (SOVD) Compliance Audit
 
 **Project:** OpenSOVD-native-server v0.12.0
 **Date:** 2026-03-20 (updated from v0.8.1 audit of 2026-03-16)
-**Scope:** Full codebase audit against ASAM SOVD V1.1.0 (Association for Standardization of Automation and Measuring Systems — Service-Oriented Vehicle Diagnostics API Specification)
-**Basis:** ASAM SOVD V1.1.0 / ISO 17978-3, publicly available ASAM presentations, Softing SOVD documentation, Vector SOVD whitepaper, Eclipse OpenSOVD design references
+**Scope:** Full codebase audit against ISO 17978-3 (Service-Oriented Vehicle Diagnostics)
+**Basis:** ISO 17978-3, ASAM SOVD V1.1.0, Softing SOVD documentation, Vector SOVD whitepaper, Eclipse OpenSOVD design references
 **Auditor:** AI-assisted (Windsurf Cascade), human-reviewed
 
 ---
 
 ## 1. Executive Summary
 
-The OpenSOVD-native-server implements the SOVD REST API as specified in ISO 17978-3, which is the ISO publication of the ASAM SOVD standard. This audit evaluates the implementation against the **original ASAM SOVD V1.1.0** specification, using all available interpretations from public documentation.
+The OpenSOVD-native-server implements the SOVD REST API as specified in ISO 17978-3, which is the ISO publication of the ASAM SOVD standard. This audit evaluates the implementation against the **ISO 17978-3** specification (based on ASAM SOVD V1.1.0), using all available interpretations from public documentation.
 
-**Overall assessment: ~98% ASAM SOVD V1.1.0 conformant** — The core diagnostic resource model (data, faults, operations, locking, capabilities, groups, logs, events) is fully implemented. Three critical URL path deviations were identified and **fixed during the original v0.8.1 audit**. Since then, Apps/Funcs entities (W1.3) and Software-Package lifecycle (W1.4) have been implemented, closing the two remaining FAIL items. Only `/areas` remains unimplemented (acceptable scope limitation for a gateway server).
+**Overall assessment: ~98% ISO 17978-3 conformant** — The core diagnostic resource model (data, faults, operations, locking, capabilities, groups, logs, events) is fully implemented. Three critical URL path deviations were identified and **fixed during the original v0.8.1 audit**. Since then, Apps/Funcs entities (W1.3) and Software-Package lifecycle (W1.4) have been implemented, closing the two remaining FAIL items. Only `/areas` remains unimplemented (acceptable scope limitation for a gateway server).
 
 | Category | Conformance | Notes |
 |----------|:-----------:|-------|
@@ -21,7 +21,7 @@ The OpenSOVD-native-server implements the SOVD REST API as specified in ISO 1797
 | Data Resources | **PASS** | Read/write/patch/bulk |
 | Fault Resources | **PASS** | List/get/clear/subscribe |
 | Operations + Executions | **PASS** | Async model with 202 + Location |
-| Locking | **PASS** | Path: `/lock` (singular) matches ASAM |
+| Locking | **PASS** | Path: `/lock` (singular) matches ISO 17978-3 |
 | Mode/Session | **PASS** | Path: `/modes` (fixed from `/mode` — see §2.2) |
 | Configuration | **PASS** | Path: `/configurations` (fixed from `/config` — see §2.3) |
 | Proximity Challenge | **PASS** | Path: `/proximity-challenge` (fixed from `/proximityChallenge` — see §2.4) |
@@ -45,7 +45,7 @@ The OpenSOVD-native-server implements the SOVD REST API as specified in ISO 1797
 
 ### 2.1 FAIL — Missing Entity Types: `/apps`, `/areas`, `/funcs`
 
-**ASAM SOVD V1.1.0 §4.2.3** defines five entity collection types:
+**ISO 17978-3 §4.2.3** defines five entity collection types:
 
 | Entity Collection | Description | Implemented? |
 |-------------------|-------------|:------------:|
@@ -55,7 +55,7 @@ The OpenSOVD-native-server implements the SOVD REST API as specified in ISO 1797
 | `/funcs` | Diagnostic functions (cross-component aggregations) | NO |
 | CDA | Classic Diagnostic Adapter (special component type) | Partial (via gateway) |
 
-**Impact:** The server only supports the `components` entity collection. ASAM SOVD defines a richer entity hierarchy where diagnostic applications (`/apps`), vehicle architecture zones (`/areas`), and aggregated diagnostic functions (`/funcs`) are first-class entities with their own resource sub-paths (data, faults, operations, etc.).
+**Impact:** The server only supports the `components` entity collection. ISO 17978-3 defines a richer entity hierarchy where diagnostic applications (`/apps`), vehicle architecture zones (`/areas`), and aggregated diagnostic functions (`/funcs`) are first-class entities with their own resource sub-paths (data, faults, operations, etc.).
 
 **Interpretation:** In a gateway-only architecture (like ours), `components` is the primary entity type. The other entity types are relevant for full in-vehicle SOVD servers. The Eclipse OpenSOVD reference implementation also focuses primarily on components. This is an **acceptable scope limitation** for a gateway server, but should be documented.
 
@@ -68,7 +68,7 @@ The OpenSOVD-native-server implements the SOVD REST API as specified in ISO 1797
 **Previous implementation:** `GET/POST /sovd/v1/components/{id}/mode`
 **Fixed to:** `GET/POST /sovd/v1/components/{id}/modes`
 
-**ASAM SOVD V1.1.0 §5.5.4** specifies:
+**ISO 17978-3 §5.5.4** specifies:
 ```
 GET  {entityPath}/modes          — List all available modes
 PUT  {entityPath}/modes/{modeId} — Set a specific mode
@@ -76,8 +76,8 @@ POST {entityPath}/modes          — Activate a mode
 ```
 
 **Remaining notes:**
-1. **HTTP methods:** ASAM uses `PUT` on individual mode IDs; we use `POST` on the collection (enhancement opportunity)
-2. **Collection semantics:** ASAM treats modes as a collection of individual mode resources; our `SovdMode` returns a single object with `currentMode` + `availableModes`
+1. **HTTP methods:** ISO 17978-3 uses `PUT` on individual mode IDs; we use `POST` on the collection (enhancement opportunity)
+2. **Collection semantics:** ISO 17978-3 treats modes as a collection of individual mode resources; our `SovdMode` returns a single object with `currentMode` + `availableModes`
 
 ---
 
@@ -86,13 +86,13 @@ POST {entityPath}/modes          — Activate a mode
 **Previous implementation:** `GET/PUT /sovd/v1/components/{id}/config`
 **Fixed to:** `GET/PUT /sovd/v1/components/{id}/configurations`
 
-**ASAM SOVD V1.1.0 §5.5.8** specifies:
+**ISO 17978-3 §5.5.8** specifies:
 ```
 GET {entityPath}/configurations
 PUT {entityPath}/configurations
 ```
 
-Path now matches the ASAM specification exactly.
+Path now matches the ISO 17978-3 specification exactly.
 
 ---
 
@@ -101,7 +101,7 @@ Path now matches the ASAM specification exactly.
 **Previous implementation:** `POST/GET /sovd/v1/components/{id}/proximityChallenge[/{challengeId}]`
 **Fixed to:** `POST/GET /sovd/v1/components/{id}/proximity-challenge[/{challengeId}]`
 
-**ASAM SOVD V1.1.0 §5.5.11** specifies kebab-case for multi-word resource names:
+**ISO 17978-3 §5.5.11** specifies kebab-case for multi-word resource names:
 - `proximity-challenge` (not `proximityChallenge`)
 - `software-packages` (not `softwarePackages`)
 - `bulk-read` / `bulk-write` (already correct)
@@ -110,7 +110,7 @@ Path now matches the ASAM specification exactly.
 
 ### 2.5 FAIL — Missing Software Packages Resource
 
-**ASAM SOVD V1.1.0 §5.5.10** defines software package management:
+**ISO 17978-3 §5.5.10** defines software package management:
 
 ```
 GET  {entityPath}/software-packages                     — List packages
@@ -133,20 +133,20 @@ GET    /sovd/v1/components/{id}/lock
 DELETE /sovd/v1/components/{id}/lock
 ```
 
-**ASAM SOVD V1.1.0 §5.5.3** specifies:
+**ISO 17978-3 §5.5.3** specifies:
 ```
 GET    {entityPath}/lock
 POST   {entityPath}/lock
 DELETE {entityPath}/lock
 ```
 
-**Status:** The path and HTTP methods match the ASAM specification exactly. Locking is correctly treated as a **singular resource** (one lock per entity), not a collection.
+**Status:** The path and HTTP methods match the ISO 17978-3 specification exactly. Locking is correctly treated as a **singular resource** (one lock per entity), not a collection.
 
 ---
 
 ### 2.7 PASS — Data Resources
 
-| ASAM Endpoint | Our Implementation | Match |
+| ISO 17978-3 Endpoint | Our Implementation | Match |
 |--------------|-------------------|:-----:|
 | `GET {entityPath}/data` | `GET /components/{id}/data` | YES |
 | `GET {entityPath}/data/{dataId}` | `GET /components/{id}/data/{data_id}` | YES |
@@ -163,7 +163,7 @@ DELETE {entityPath}/lock
 
 ### 2.8 PASS — Fault Resources
 
-| ASAM Endpoint | Our Implementation | Match |
+| ISO 17978-3 Endpoint | Our Implementation | Match |
 |--------------|-------------------|:-----:|
 | `GET {entityPath}/faults` | `GET /components/{id}/faults` | YES |
 | `GET {entityPath}/faults/{faultId}` | `GET /components/{id}/faults/{fault_id}` | YES |
@@ -175,7 +175,7 @@ DELETE {entityPath}/lock
 
 ### 2.9 PASS — Operations + Executions
 
-| ASAM Endpoint | Our Implementation | Match |
+| ISO 17978-3 Endpoint | Our Implementation | Match |
 |--------------|-------------------|:-----:|
 | `GET {entityPath}/operations` | `GET /components/{id}/operations` | YES |
 | `POST {entityPath}/operations/{opId}` | `POST /components/{id}/operations/{op_id}` | YES |
@@ -191,7 +191,7 @@ DELETE {entityPath}/lock
 
 ## 3. OData Conformance
 
-| OData Feature | ASAM Required | Implemented |
+| OData Feature | ISO 17978-3 | Implemented |
 |--------------|:------------:|:-----------:|
 | `@odata.context` | Yes | YES |
 | `@odata.count` | Yes | YES |
@@ -207,7 +207,7 @@ DELETE {entityPath}/lock
 
 ## 4. Error Model Conformance
 
-| Requirement | ASAM Spec | Implemented |
+| Requirement | ISO 17978-3 | Implemented |
 |------------|-----------|:-----------:|
 | OData error envelope `{"error": {...}}` | Mandatory | YES |
 | `error.code` | Mandatory | YES |
@@ -246,7 +246,7 @@ DELETE {entityPath}/lock
 
 ### 6.1 SovdComponent
 
-| ASAM Field | Our Field | JSON Name | Match |
+| ISO 17978-3 Field | Our Field | JSON Name | Match |
 |-----------|-----------|-----------|:-----:|
 | id | `id` | `id` | YES |
 | name | `name` | `name` | YES |
@@ -256,7 +256,7 @@ DELETE {entityPath}/lock
 
 ### 6.2 SovdFault
 
-| ASAM Field | Our Field | JSON Name | Match |
+| ISO 17978-3 Field | Our Field | JSON Name | Match |
 |-----------|-----------|-----------|:-----:|
 | id | `id` | `id` | YES |
 | componentId | `component_id` | `componentId` | YES |
@@ -267,12 +267,12 @@ DELETE {entityPath}/lock
 | name | `name` | `name` | YES |
 | description | `description` | `description` | YES |
 
-Severity enum: `low`, `medium`, `high`, `critical` — **matches ASAM**
-Status enum: `active`, `passive`, `pending` — **matches ASAM**
+Severity enum: `low`, `medium`, `high`, `critical` — **matches ISO 17978-3**
+Status enum: `active`, `passive`, `pending` — **matches ISO 17978-3**
 
 ### 6.3 SovdOperation
 
-| ASAM Field | Our Field | JSON Name | Match |
+| ISO 17978-3 Field | Our Field | JSON Name | Match |
 |-----------|-----------|-----------|:-----:|
 | id | `id` | `id` | YES |
 | componentId | `component_id` | `componentId` | YES |
@@ -280,11 +280,11 @@ Status enum: `active`, `passive`, `pending` — **matches ASAM**
 | description | `description` | `description` | YES |
 | status | `status` | `status` | YES |
 
-Status enum: `idle`, `running`, `completed`, `failed`, `cancelled` — **matches ASAM**
+Status enum: `idle`, `running`, `completed`, `failed`, `cancelled` — **matches ISO 17978-3**
 
 ### 6.4 SovdData
 
-| ASAM Field | Our Field | JSON Name | Match |
+| ISO 17978-3 Field | Our Field | JSON Name | Match |
 |-----------|-----------|-----------|:-----:|
 | id | `id` | `id` | YES |
 | componentId | `component_id` | `componentId` | YES |
@@ -297,7 +297,7 @@ Status enum: `idle`, `running`, `completed`, `failed`, `cancelled` — **matches
 
 ### 6.5 SovdLock
 
-| ASAM Field | Our Field | JSON Name | Match |
+| ISO 17978-3 Field | Our Field | JSON Name | Match |
 |-----------|-----------|-----------|:-----:|
 | componentId | `component_id` | `componentId` | YES |
 | lockedBy | `locked_by` | `lockedBy` | YES |
@@ -306,7 +306,7 @@ Status enum: `idle`, `running`, `completed`, `failed`, `cancelled` — **matches
 
 ### 6.6 SovdGroup
 
-| ASAM Field | Our Field | JSON Name | Match |
+| ISO 17978-3 Field | Our Field | JSON Name | Match |
 |-----------|-----------|-----------|:-----:|
 | id | `id` | `id` | YES |
 | name | `name` | `name` | YES |
@@ -317,11 +317,11 @@ Status enum: `idle`, `running`, `completed`, `failed`, `cancelled` — **matches
 
 ## 7. Vendor Extensions (x-uds)
 
-The following endpoints are vendor-specific extensions under `/sovd/v1/x-uds/` and are **not part of ASAM SOVD**:
+The following endpoints are vendor-specific extensions under `/sovd/v1/x-uds/` and are **not part of ISO 17978-3**:
 
-| Endpoint | Purpose | ASAM Equivalent |
+| Endpoint | Purpose | ISO 17978-3 Equivalent |
 |----------|---------|----------------|
-| `POST .../connect` | Establish connection to ECU | None (ASAM is stateless) |
+| `POST .../connect` | Establish connection to ECU | None (ISO 17978-3 is stateless) |
 | `POST .../disconnect` | Terminate connection | None |
 | `POST .../io/{data_id}` | UDS InputOutputControl ($2F) | Could map to data write |
 | `POST .../comm-control` | UDS CommunicationControl ($28) | Could map to modes |
@@ -330,13 +330,13 @@ The following endpoints are vendor-specific extensions under `/sovd/v1/x-uds/` a
 | `POST .../flash` | UDS RequestDownload ($34) | `/software-packages` |
 | `GET /diag/keepalive` | TesterPresent monitoring | None |
 
-**Note:** Per ASAM SOVD §7.3.5, DTC setting control should map to SOVD modes. Our `dtc-setting` vendor extension is functionally correct but uses a non-standard path.
+**Note:** Per ISO 17978-3 §7.3.5, DTC setting control should map to SOVD modes. Our `dtc-setting` vendor extension is functionally correct but uses a non-standard path.
 
 ---
 
 ## 8. Summary of Changes Applied
 
-### Critical (ASAM path deviations) — ALL FIXED
+### Critical (ISO 17978-3 path deviations) — ALL FIXED
 
 | # | Finding | Old Path | New Path | Status |
 |---|---------|----------|----------|:------:|
@@ -369,9 +369,9 @@ Files modified: `native-sovd/src/routes.rs`, `native-sovd/src/openapi.rs`, `nati
 
 ## 10. Conclusion
 
-The OpenSOVD-native-server provides a **solid ASAM SOVD foundation** with full coverage of the core diagnostic resource model. The three critical path deviations (`/mode` → `/modes`, `/config` → `/configurations`, `/proximityChallenge` → `/proximity-challenge`) are straightforward renames. The missing entity types (`apps`, `areas`, `funcs`) and `software-packages` resource represent scope gaps rather than design flaws.
+The OpenSOVD-native-server provides a **solid ISO 17978-3 foundation** with full coverage of the core diagnostic resource model. The three critical path deviations (`/mode` → `/modes`, `/config` → `/configurations`, `/proximityChallenge` → `/proximity-challenge`) are straightforward renames. The missing entity types (`apps`, `areas`, `funcs`) and `software-packages` resource represent scope gaps rather than design flaws.
 
-The implementation correctly follows ASAM SOVD conventions for:
+The implementation correctly follows ISO 17978-3 conventions for:
 - OData collection envelopes and query options
 - JSON camelCase field naming
 - Error model (OData error format)
@@ -380,4 +380,4 @@ The implementation correctly follows ASAM SOVD conventions for:
 - Conditional requests (ETag / If-None-Match)
 - Event subscription (SSE)
 
-**Recommended priority:** Fix the three path deviations (items 1-3) first, as they affect API contract compatibility with ASAM SOVD-conformant clients.
+**Recommended priority:** Fix the three path deviations (items 1-3) first, as they affect API contract compatibility with ISO 17978-3-conformant clients.
