@@ -127,9 +127,8 @@ impl HistoryService {
             }
         });
 
-        let mapped = iter.filter_map(|(_, value)| {
-            serde_json::from_slice::<SovdAuditEntry>(&value).ok()
-        });
+        let mapped =
+            iter.filter_map(|(_, value)| serde_json::from_slice::<SovdAuditEntry>(&value).ok());
 
         if limit > 0 {
             mapped.take(limit).collect()
@@ -201,8 +200,7 @@ impl HistoryService {
     //   audit: "hist:audit:{ts_padded_20}:{seq_padded_20}"
 
     fn fault_key(component_id: &str, timestamp_ms: i64, fault_id: &str) -> Vec<u8> {
-        format!("hist:fault:{component_id}:{timestamp_ms:020}:{fault_id}")
-        .into_bytes()
+        format!("hist:fault:{component_id}:{timestamp_ms:020}:{fault_id}").into_bytes()
     }
 
     fn audit_key(timestamp_ms: i64, seq: u64) -> Vec<u8> {
@@ -243,10 +241,7 @@ mod tests {
     use native_interfaces::InMemoryStorage;
 
     fn make_service() -> HistoryService {
-        HistoryService::new(
-            Arc::new(InMemoryStorage::new()),
-            HistoryConfig::default(),
-        )
+        HistoryService::new(Arc::new(InMemoryStorage::new()), HistoryConfig::default())
     }
 
     fn make_fault(id: &str, component_id: &str, code: &str) -> SovdFault {
@@ -347,7 +342,8 @@ mod tests {
 
         // Also add old audit entry
         let old_audit_key = HistoryService::audit_key(500, 1);
-        let old_audit_val = serde_json::to_vec(&make_audit(1, "u", SovdAuditAction::ReadData)).unwrap();
+        let old_audit_val =
+            serde_json::to_vec(&make_audit(1, "u", SovdAuditAction::ReadData)).unwrap();
         svc.store.put(&old_audit_key, &old_audit_val);
 
         assert_eq!(svc.fault_count(), 2);

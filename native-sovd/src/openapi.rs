@@ -674,7 +674,10 @@ mod tests {
         assert!(info["title"].is_string(), "info.title missing");
         assert!(info["version"].is_string(), "info.version missing");
         assert!(info["x-sovd-version"].is_string(), "x-sovd-version missing");
-        assert!(info["x-sovd-applicability"].is_object(), "x-sovd-applicability missing");
+        assert!(
+            info["x-sovd-applicability"].is_object(),
+            "x-sovd-applicability missing"
+        );
         assert!(
             info["x-sovd-applicability"]["online"].is_boolean(),
             "x-sovd-applicability.online missing"
@@ -696,21 +699,21 @@ mod tests {
 
         // ISO 17978-3 mandatory paths (ASAM SOVD §5.3)
         let mandatory = [
-            "/",                                                          // §7.6.3 Discovery
-            "/components",                                                // §7.6.2.1 Components
-            "/components/{component_id}",                                 // §7.6.3 Component detail
-            "/components/{component_id}/data",                            // §7.9.3 Data list
-            "/components/{component_id}/data/{data_id}",                  // §7.9.4 Data read/write
-            "/components/{component_id}/faults",                          // §7.8.2 Fault list
-            "/components/{component_id}/faults/{fault_id}",               // §7.8.3 Fault detail
-            "/components/{component_id}/operations",                      // §7.14.3 Operation list
-            "/components/{component_id}/operations/{op_id}/executions",   // §7.14.4 Executions
+            "/",                                                                  // §7.6.3 Discovery
+            "/components",                                  // §7.6.2.1 Components
+            "/components/{component_id}",                   // §7.6.3 Component detail
+            "/components/{component_id}/data",              // §7.9.3 Data list
+            "/components/{component_id}/data/{data_id}",    // §7.9.4 Data read/write
+            "/components/{component_id}/faults",            // §7.8.2 Fault list
+            "/components/{component_id}/faults/{fault_id}", // §7.8.3 Fault detail
+            "/components/{component_id}/operations",        // §7.14.3 Operation list
+            "/components/{component_id}/operations/{op_id}/executions", // §7.14.4 Executions
             "/components/{component_id}/operations/{op_id}/executions/{exec_id}", // §7.14 Execution detail
-            "/components/{component_id}/modes",                           // §7.16.2 Mode list
-            "/components/{component_id}/modes/{mode_id}",                 // §7.16.3 Mode detail
-            "/components/{component_id}/locks",                           // §7.17 Locking
-            "/components/{component_id}/configurations",                  // §7.12 Configuration
-            "/components/{component_id}/logs",                            // §7.21 Logs
+            "/components/{component_id}/modes", // §7.16.2 Mode list
+            "/components/{component_id}/modes/{mode_id}", // §7.16.3 Mode detail
+            "/components/{component_id}/locks", // §7.17 Locking
+            "/components/{component_id}/configurations", // §7.12 Configuration
+            "/components/{component_id}/logs",  // §7.21 Logs
         ];
 
         for path in &mandatory {
@@ -740,8 +743,7 @@ mod tests {
     #[test]
     fn contract_executions_path_has_get_and_post() {
         let spec = build_openapi_json();
-        let execs =
-            &spec["paths"]["/components/{component_id}/operations/{op_id}/executions"];
+        let execs = &spec["paths"]["/components/{component_id}/operations/{op_id}/executions"];
         assert!(execs["get"].is_object(), "executions GET missing");
         assert!(execs["post"].is_object(), "executions POST missing");
     }
@@ -752,7 +754,10 @@ mod tests {
         let post =
             &spec["paths"]["/components/{component_id}/operations/{op_id}/executions"]["post"];
         let responses = &post["responses"];
-        assert!(responses["202"].is_object(), "202 Accepted response missing");
+        assert!(
+            responses["202"].is_object(),
+            "202 Accepted response missing"
+        );
         assert!(
             responses["202"]["headers"]["Location"].is_object(),
             "Location header on 202 missing"
@@ -809,8 +814,14 @@ mod tests {
             .as_object()
             .expect("securitySchemes must be object");
 
-        assert!(schemes.contains_key("ApiKeyAuth"), "ApiKeyAuth scheme missing");
-        assert!(schemes.contains_key("BearerAuth"), "BearerAuth scheme missing");
+        assert!(
+            schemes.contains_key("ApiKeyAuth"),
+            "ApiKeyAuth scheme missing"
+        );
+        assert!(
+            schemes.contains_key("BearerAuth"),
+            "BearerAuth scheme missing"
+        );
         assert_eq!(schemes["ApiKeyAuth"]["type"], "apiKey");
         assert_eq!(schemes["BearerAuth"]["type"], "http");
         assert_eq!(schemes["BearerAuth"]["scheme"], "bearer");
@@ -820,10 +831,7 @@ mod tests {
     fn contract_global_security_requirement_set() {
         let spec = build_openapi_json();
         let security = spec["security"].as_array().expect("security must be array");
-        assert!(
-            !security.is_empty(),
-            "Global security requirement is empty"
-        );
+        assert!(!security.is_empty(), "Global security requirement is empty");
     }
 
     #[test]
@@ -942,10 +950,8 @@ mod tests {
         let full = build_openapi_json();
         let full_paths = full["paths"].as_object().unwrap();
 
-        let data_only = build_openapi_json_with_policy(
-            &native_interfaces::DefaultProfile,
-            Some("data"),
-        );
+        let data_only =
+            build_openapi_json_with_policy(&native_interfaces::DefaultProfile, Some("data"));
         let data_paths = data_only["paths"].as_object().unwrap();
 
         assert!(

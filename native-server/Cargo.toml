@@ -55,3 +55,7 @@ vsomeip-ffi = ["native-comm-someip/vsomeip-ffi"]
 persist = ["native-core/persist"]
 # Enable OpenTelemetry OTLP trace export
 otlp = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "tracing-opentelemetry"]
+# Enable HashiCorp Vault secret provider
+vault = ["native-core/vault"]
+# Enable WebSocket bridge transport
+ws-bridge = ["native-core/ws-bridge"]

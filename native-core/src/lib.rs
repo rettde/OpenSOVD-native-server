@@ -38,10 +38,16 @@ pub mod lock_manager;
 pub mod router;
 #[cfg(feature = "persist")]
 pub mod sled_storage;
+#[cfg(feature = "vault")]
+pub mod vault_provider;
+#[cfg(feature = "ws-bridge")]
+pub mod ws_bridge;
 
 // ── Re-exports ──────────────────────────────────────────────────────────────
 pub use audit_log::{AuditLog, AuditLogConfig};
-pub use backup::{create_snapshot, restore_snapshot, snapshot_from_json, snapshot_to_json, DiagnosticSnapshot};
+pub use backup::{
+    create_snapshot, restore_snapshot, snapshot_from_json, snapshot_to_json, DiagnosticSnapshot,
+};
 pub use diag_log::DiagLog;
 pub use fault_bridge::{FaultBridge, FaultLifecycleStage, FaultRecord, FaultSeverity, FaultSink};
 pub use fault_governor::{FaultGovernor, FaultGovernorConfig};
@@ -52,3 +58,7 @@ pub use lock_manager::LockManager;
 pub use router::ComponentRouter;
 #[cfg(feature = "persist")]
 pub use sled_storage::SledStorage;
+#[cfg(feature = "vault")]
+pub use vault_provider::{VaultConfig, VaultSecretProvider};
+#[cfg(feature = "ws-bridge")]
+pub use ws_bridge::WsBridgeTransport;

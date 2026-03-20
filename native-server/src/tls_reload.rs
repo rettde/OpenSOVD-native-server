@@ -16,12 +16,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use axum_server::tls_rustls::RustlsConfig;
 use tokio::sync::watch;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 /// Configuration for TLS hot-reload.
 #[derive(Debug, Clone)]
@@ -51,6 +50,7 @@ impl TlsReloadConfig {
         self
     }
 
+    #[allow(dead_code)] // Public builder API — used in tests and by consumers
     pub fn with_poll_interval(mut self, interval: Duration) -> Self {
         self.poll_interval = interval;
         self
@@ -59,13 +59,14 @@ impl TlsReloadConfig {
 
 /// Handle returned by `spawn_tls_reloader` — can be used to stop the watcher.
 pub struct TlsReloadHandle {
-    _shutdown_tx: watch::Sender<bool>,
+    shutdown_tx: watch::Sender<bool>,
 }
 
 impl TlsReloadHandle {
     /// Signal the reload task to stop.
+    #[allow(dead_code)] // Public API — consumers call this on graceful shutdown
     pub fn shutdown(&self) {
-        let _ = self._shutdown_tx.send(true);
+        let _ = self.shutdown_tx.send(true);
     }
 }
 
@@ -82,10 +83,7 @@ pub fn spawn_tls_reloader(
     tokio::spawn(async move {
         let mut last_cert_mtime = file_mtime(&reload_config.cert_path);
         let mut last_key_mtime = file_mtime(&reload_config.key_path);
-        let mut last_ca_mtime = reload_config
-            .client_ca_path
-            .as_ref()
-            .map(|p| file_mtime(p));
+        let mut last_ca_mtime = reload_config.client_ca_path.as_ref().map(|p| file_mtime(p));
 
         info!(
             cert = %reload_config.cert_path.display(),
@@ -96,7 +94,7 @@ pub fn spawn_tls_reloader(
 
         loop {
             tokio::select! {
-                _ = tokio::time::sleep(reload_config.poll_interval) => {},
+                () = tokio::time::sleep(reload_config.poll_interval) => {},
                 _ = shutdown_rx.changed() => {
                     info!("TLS hot-reload watcher shutting down");
                     break;
@@ -105,10 +103,7 @@ pub fn spawn_tls_reloader(
 
             let cert_mtime = file_mtime(&reload_config.cert_path);
             let key_mtime = file_mtime(&reload_config.key_path);
-            let ca_mtime = reload_config
-                .client_ca_path
-                .as_ref()
-                .map(|p| file_mtime(p));
+            let ca_mtime = reload_config.client_ca_path.as_ref().map(|p| file_mtime(p));
 
             let cert_changed = cert_mtime != last_cert_mtime;
             let key_changed = key_mtime != last_key_mtime;
@@ -117,9 +112,7 @@ pub fn spawn_tls_reloader(
             if cert_changed || key_changed || ca_changed {
                 info!(
                     cert_changed,
-                    key_changed,
-                    ca_changed,
-                    "TLS certificate change detected — reloading"
+                    key_changed, ca_changed, "TLS certificate change detected — reloading"
                 );
 
                 match tls_config
@@ -142,16 +135,12 @@ pub fn spawn_tls_reloader(
         }
     });
 
-    TlsReloadHandle {
-        _shutdown_tx: shutdown_tx,
-    }
+    TlsReloadHandle { shutdown_tx }
 }
 
 /// Get the modification time of a file, returning None if the file doesn't exist.
 fn file_mtime(path: &Path) -> Option<SystemTime> {
-    std::fs::metadata(path)
-        .ok()
-        .and_then(|m| m.modified().ok())
+    std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
 }
 
 /// Convenience: build a `TlsReloadConfig` from server config fields.
@@ -181,10 +170,7 @@ mod tests {
 
         assert_eq!(config.cert_path, PathBuf::from("/tmp/cert.pem"));
         assert_eq!(config.key_path, PathBuf::from("/tmp/key.pem"));
-        assert_eq!(
-            config.client_ca_path,
-            Some(PathBuf::from("/tmp/ca.pem"))
-        );
+        assert_eq!(config.client_ca_path, Some(PathBuf::from("/tmp/ca.pem")));
         assert_eq!(config.poll_interval, Duration::from_secs(60));
     }
 

@@ -466,7 +466,7 @@ fn guarded_history_fault(state: &AppState, fault: &native_interfaces::sovd::Sovd
 
 /// Build the full axum router with all SOVD endpoints
 #[allow(clippy::too_many_lines)]
-pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
+pub fn build_router(state: AppState, auth_config: AuthConfig, metrics_enabled: bool) -> Router {
     // ── Standard ISO 17978-3 routes ────────────────────────────────────────
     let sovd_v1 = Router::new()
         // Discovery (§5.1)
@@ -723,13 +723,17 @@ pub fn build_router(state: AppState, auth_config: AuthConfig) -> Router {
                 async move { Json((*spec).clone()) }
             }),
         )
-        // Prometheus metrics endpoint (public)
+        // Prometheus metrics endpoint (F7, public — gated by config)
         .route(
             "/metrics",
-            get(move || {
-                let handle = prometheus_handle.clone();
-                async move { handle.render() }
-            }),
+            if metrics_enabled {
+                get(move || {
+                    let handle = prometheus_handle.clone();
+                    async move { handle.render() }
+                })
+            } else {
+                get(|| async { (StatusCode::NOT_FOUND, "Metrics endpoint disabled") })
+            },
         )
         // Backup/restore admin endpoints (E2.3)
         .route("/x-admin/backup", get(create_backup))
@@ -1101,7 +1105,10 @@ async fn clear_faults(
 ) -> Result<StatusCode, (StatusCode, Json<SovdErrorEnvelope>)> {
     require_unlocked_or_owner(&state.diag.lock_manager, &component_id, &caller.0)?;
     // W2.2 + E2.4: Snapshot faults to history before clearing (flag-gated)
-    let faults_before = state.diag.fault_manager.get_faults_for_component(&component_id);
+    let faults_before = state
+        .diag
+        .fault_manager
+        .get_faults_for_component(&component_id);
     for fault in &faults_before {
         guarded_history_fault(&state, fault);
     }
@@ -1780,7 +1787,11 @@ async fn create_backup(
         "backup",
         "GET",
         "success",
-        Some(&format!("faults={} audit={}", snapshot.faults.len(), snapshot.audit_entries.len())),
+        Some(&format!(
+            "faults={} audit={}",
+            snapshot.faults.len(),
+            snapshot.audit_entries.len()
+        )),
         None,
     );
 
@@ -1803,9 +1814,8 @@ async fn restore_backup(
     State(state): State<AppState>,
     body: axum::body::Bytes,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<SovdErrorEnvelope>)> {
-    let snapshot = native_core::snapshot_from_json(&body).map_err(|e| {
-        sovd_error(SovdErrorCode::BadRequest, &e.to_string())
-    })?;
+    let snapshot = native_core::snapshot_from_json(&body)
+        .map_err(|e| sovd_error(SovdErrorCode::BadRequest, &e.to_string()))?;
 
     let result = native_core::restore_snapshot(
         &snapshot,
@@ -2198,11 +2208,10 @@ async fn export_faults(
         // Query historical fault storage (W2.2)
         let from = params.from.unwrap_or(0);
         let to = params.to.unwrap_or(i64::MAX);
-        let historical = state.diag.history.query_faults(
-            params.component_id.as_deref(),
-            from,
-            to,
-        );
+        let historical = state
+            .diag
+            .history
+            .query_faults(params.component_id.as_deref(), from, to);
         for fault in historical {
             if severity_filter(&fault) {
                 if let Ok(json) = serde_json::to_string(&fault) {
@@ -3577,7 +3586,10 @@ mod tests {
 
     fn test_state() -> AppState {
         use crate::state::{DiagState, RuntimeState, SecurityState};
-        use native_core::{AuditLog, ComponentRouter, DiagLog, FaultManager, HistoryConfig, HistoryService, LockManager};
+        use native_core::{
+            AuditLog, ComponentRouter, DiagLog, FaultManager, HistoryConfig, HistoryService,
+            LockManager,
+        };
         use native_health::HealthMonitor;
         use std::sync::Arc;
 
@@ -3616,7 +3628,7 @@ mod tests {
     }
 
     fn test_router() -> Router {
-        build_router(test_state(), AuthConfig::default())
+        build_router(test_state(), AuthConfig::default(), true)
     }
 
     // ── Pagination unit tests ───────────────────────────────────────────
@@ -4044,7 +4056,7 @@ mod tests {
     #[tokio::test]
     async fn lock_acquire_and_release() {
         let state = test_state();
-        let app = build_router(state, AuthConfig::default());
+        let app = build_router(state, AuthConfig::default(), true);
 
         // Acquire lock
         let resp = app
@@ -4091,7 +4103,7 @@ mod tests {
     #[tokio::test]
     async fn lock_double_acquire_fails() {
         let state = test_state();
-        let app = build_router(state, AuthConfig::default());
+        let app = build_router(state, AuthConfig::default(), true);
 
         // First acquire
         let _ = app
@@ -4516,7 +4528,7 @@ mod tests {
     #[tokio::test]
     async fn proximity_challenge_creates_and_retrieves() {
         let state = test_state();
-        let app = build_router(state, AuthConfig::default());
+        let app = build_router(state, AuthConfig::default(), true);
 
         // Create challenge
         let resp = app
@@ -4709,7 +4721,7 @@ mod tests {
     #[tokio::test]
     async fn write_data_creates_audit_entry() {
         let state = test_state();
-        let app = build_router(state.clone(), AuthConfig::default());
+        let app = build_router(state.clone(), AuthConfig::default(), true);
 
         // Perform a write_data
         let _ = app
@@ -4746,7 +4758,7 @@ mod tests {
     #[tokio::test]
     async fn clear_faults_creates_audit_entry() {
         let state = test_state();
-        let app = build_router(state.clone(), AuthConfig::default());
+        let app = build_router(state.clone(), AuthConfig::default(), true);
 
         // Clear faults
         let _ = app
@@ -4780,7 +4792,7 @@ mod tests {
     #[tokio::test]
     async fn lock_operations_create_audit_entries() {
         let state = test_state();
-        let app = build_router(state.clone(), AuthConfig::default());
+        let app = build_router(state.clone(), AuthConfig::default(), true);
 
         // Acquire lock
         let _ = app
@@ -4831,7 +4843,7 @@ mod tests {
     #[tokio::test]
     async fn audit_limit_query_param_works() {
         let state = test_state();
-        let app = build_router(state.clone(), AuthConfig::default());
+        let app = build_router(state.clone(), AuthConfig::default(), true);
 
         // Generate multiple audit entries
         for _ in 0..5 {
@@ -4867,7 +4879,7 @@ mod tests {
     #[tokio::test]
     async fn connect_disconnect_create_audit_entries() {
         let state = test_state();
-        let app = build_router(state.clone(), AuthConfig::default());
+        let app = build_router(state.clone(), AuthConfig::default(), true);
 
         let resp = app
             .clone()
@@ -5217,7 +5229,7 @@ mod mock_backend_tests {
     }
 
     fn mock_router() -> Router {
-        build_router(mock_state(), AuthConfig::default())
+        build_router(mock_state(), AuthConfig::default(), true)
     }
 
     // ── Discovery tests (Gateway + MockCDA) ──────────────────────────────
@@ -5356,7 +5368,7 @@ mod mock_backend_tests {
             })
             .unwrap();
 
-        let app = build_router(state, AuthConfig::default());
+        let app = build_router(state, AuthConfig::default(), true);
         let resp = app
             .oneshot(
                 Request::get("/sovd/v1/components/mock-ecu/faults")
@@ -5611,7 +5623,7 @@ mod mock_backend_tests {
 
     #[tokio::test]
     async fn auth_enabled_rejects_request_without_credentials() {
-        let app = build_router(mock_state(), auth_enabled_config());
+        let app = build_router(mock_state(), auth_enabled_config(), true);
         let resp = app
             .oneshot(
                 Request::get("/sovd/v1/components")
@@ -5625,7 +5637,7 @@ mod mock_backend_tests {
 
     #[tokio::test]
     async fn auth_enabled_rejects_wrong_api_key() {
-        let app = build_router(mock_state(), auth_enabled_config());
+        let app = build_router(mock_state(), auth_enabled_config(), true);
         let resp = app
             .oneshot(
                 Request::get("/sovd/v1/components")
@@ -5640,7 +5652,7 @@ mod mock_backend_tests {
 
     #[tokio::test]
     async fn auth_enabled_accepts_correct_api_key() {
-        let app = build_router(mock_state(), auth_enabled_config());
+        let app = build_router(mock_state(), auth_enabled_config(), true);
         let resp = app
             .oneshot(
                 Request::get("/sovd/v1/components")
@@ -5655,7 +5667,7 @@ mod mock_backend_tests {
 
     #[tokio::test]
     async fn auth_enabled_public_path_bypasses_auth() {
-        let app = build_router(mock_state(), auth_enabled_config());
+        let app = build_router(mock_state(), auth_enabled_config(), true);
         let resp = app
             .oneshot(Request::get("/sovd/v1/health").body(Body::empty()).unwrap())
             .await
@@ -5668,7 +5680,7 @@ mod mock_backend_tests {
         let mut config = auth_enabled_config();
         // The nested route is /sovd/v1 (no trailing slash)
         config.public_paths.push("/sovd/v1".into());
-        let app = build_router(mock_state(), config);
+        let app = build_router(mock_state(), config, true);
         let resp = app
             .oneshot(Request::get("/sovd/v1").body(Body::empty()).unwrap())
             .await
@@ -5686,7 +5698,7 @@ mod mock_backend_tests {
             .lock_manager
             .acquire("mock-ecu", "owner-1", None)
             .unwrap();
-        let app = build_router(state, AuthConfig::default());
+        let app = build_router(state, AuthConfig::default(), true);
         let resp = app
             .oneshot(
                 Request::put("/sovd/v1/components/mock-ecu/data/vin")
@@ -5707,7 +5719,7 @@ mod mock_backend_tests {
             .lock_manager
             .acquire("mock-ecu", "owner-1", None)
             .unwrap();
-        let app = build_router(state, AuthConfig::default());
+        let app = build_router(state, AuthConfig::default(), true);
         let resp = app
             .oneshot(
                 Request::put("/sovd/v1/components/mock-ecu/data/vin")
@@ -5725,7 +5737,7 @@ mod mock_backend_tests {
     #[tokio::test]
     async fn unlocked_component_allows_write() {
         let state = mock_state();
-        let app = build_router(state, AuthConfig::default());
+        let app = build_router(state, AuthConfig::default(), true);
         let resp = app
             .oneshot(
                 Request::put("/sovd/v1/components/mock-ecu/data/vin")
@@ -5748,7 +5760,7 @@ mod mock_backend_tests {
             .lock_manager
             .acquire("mock-ecu", "owner-1", None)
             .unwrap();
-        let app = build_router(state, AuthConfig::default());
+        let app = build_router(state, AuthConfig::default(), true);
         // Try to release as a different caller via x-sovd-client-id header
         let resp = app
             .oneshot(
@@ -5778,7 +5790,7 @@ mod mock_backend_tests {
             .lock_manager
             .acquire("mock-ecu", "rightful-owner", None)
             .unwrap();
-        let app = build_router(state, AuthConfig::default());
+        let app = build_router(state, AuthConfig::default(), true);
         let resp = app
             .oneshot(
                 Request::delete("/sovd/v1/components/mock-ecu/lock")
@@ -5798,7 +5810,7 @@ mod mock_backend_tests {
         let state = mock_state();
         let mut config = auth_enabled_config();
         config.api_key = Some("test-secret-key".into());
-        let app = build_router(state.clone(), config);
+        let app = build_router(state.clone(), config, true);
         let resp = app
             .oneshot(
                 Request::post("/sovd/v1/components/mock-ecu/lock")
@@ -5888,7 +5900,7 @@ mod mock_backend_tests {
     async fn read_data_if_none_match_returns_304() {
         let state = mock_state();
         // First request: get the ETag
-        let app = build_router(state.clone(), AuthConfig::default());
+        let app = build_router(state.clone(), AuthConfig::default(), true);
         let resp = app
             .oneshot(
                 Request::get("/sovd/v1/components/mock-ecu/data/D001")
@@ -5906,7 +5918,7 @@ mod mock_backend_tests {
             .to_owned();
 
         // Second request with If-None-Match: should get 304
-        let app2 = build_router(state, AuthConfig::default());
+        let app2 = build_router(state, AuthConfig::default(), true);
         let resp2 = app2
             .oneshot(
                 Request::get("/sovd/v1/components/mock-ecu/data/D001")
@@ -5930,7 +5942,7 @@ mod mock_backend_tests {
             .lock_manager
             .acquire("mock-ecu", "owner-1", Some(future))
             .unwrap();
-        let app = build_router(state, AuthConfig::default());
+        let app = build_router(state, AuthConfig::default(), true);
         let resp = app
             .oneshot(
                 Request::put("/sovd/v1/components/mock-ecu/data/vin")
@@ -5960,7 +5972,7 @@ mod mock_backend_tests {
             .lock_manager
             .acquire("mock-ecu", "owner-1", None)
             .unwrap();
-        let app = build_router(state, AuthConfig::default());
+        let app = build_router(state, AuthConfig::default(), true);
         let resp = app
             .oneshot(
                 Request::put("/sovd/v1/components/mock-ecu/data/vin")
@@ -6333,7 +6345,11 @@ mod mock_backend_tests {
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let flags = json["value"].as_array().unwrap();
         // Should have at least the core flags: audit, history, rate_limit, bridge
-        assert!(flags.len() >= 4, "Expected at least 4 default flags, got {}", flags.len());
+        assert!(
+            flags.len() >= 4,
+            "Expected at least 4 default flags, got {}",
+            flags.len()
+        );
     }
 
     #[tokio::test]
@@ -6341,7 +6357,7 @@ mod mock_backend_tests {
         let state = mock_state();
         // Disable audit via feature flag
         state.runtime.feature_flags.set("audit", false);
-        let app = build_router(state.clone(), AuthConfig::default());
+        let app = build_router(state.clone(), AuthConfig::default(), true);
 
         // Trigger a fault clear (which normally records audit)
         let resp = app
@@ -6368,7 +6384,7 @@ mod mock_backend_tests {
         let state = mock_state();
         // Disable history via feature flag
         state.runtime.feature_flags.set("history", false);
-        let app = build_router(state.clone(), AuthConfig::default());
+        let app = build_router(state.clone(), AuthConfig::default(), true);
 
         // Trigger a fault list (which normally records to history)
         let resp = app
@@ -6430,17 +6446,23 @@ mod mock_backend_tests {
     async fn backup_returns_json_snapshot() {
         let app = mock_router();
         let resp = app
-            .oneshot(
-                Request::get("/x-admin/backup")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::get("/x-admin/backup").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let ct = resp.headers().get("content-type").unwrap().to_str().unwrap();
+        let ct = resp
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
         assert!(ct.contains("application/json"));
-        let cd = resp.headers().get("content-disposition").unwrap().to_str().unwrap();
+        let cd = resp
+            .headers()
+            .get("content-disposition")
+            .unwrap()
+            .to_str()
+            .unwrap();
         assert!(cd.contains("opensovd-backup-"));
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await

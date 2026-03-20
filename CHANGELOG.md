@@ -7,6 +7,36 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.12.0] — 2026-03-20
+
+### Phase 2 Future Work — Prometheus Config, Vault Secrets, WebSocket Bridge
+
+#### F7: Prometheus Scrape Endpoint (config-gated)
+- `MetricsConfig` struct (`enabled`, `path`) in `AppConfig` — gates `/metrics` endpoint via config
+- `build_router` accepts `metrics_enabled` parameter; disabled config returns 404 on `/metrics`
+
+#### F4: HashiCorp Vault Secret Provider (`vault` feature)
+- **`VaultSecretProvider`** — `SecretProvider` implementation using Vault KV v2 HTTP API
+- Time-based cache with configurable TTL (default 5 min), invalidation support
+- `SecretsConfig` in `AppConfig`: `provider` selector (`env`/`vault`/`static`), Vault address, mount, prefix
+- Auto-populates `auth.jwt_secret` and `auth.api_key` from Vault at startup
+- Falls back to `VAULT_TOKEN` env var if no token in config
+- **10 unit tests** (cache, TTL expiry, invalidation, unreachable server, defaults)
+
+#### F3: WebSocket Bridge Transport (`ws-bridge` feature)
+- **`WsBridgeTransport`** — `BridgeTransport` implementation using `tokio-tungstenite`
+- Full WebSocket cloud↔vehicle tunnel: handshake, request forwarding, heartbeat (Ping/Pong), disconnect
+- Per-session read/write task pair with mpsc channels and oneshot response correlation
+- `start_accept_loop()` binds TCP listener, upgrades to WS, registers sessions
+- When `ws-bridge` feature enabled, bridge mode auto-selects WS transport over in-memory
+- **8 integration tests** (connect, roundtrip, heartbeat, disconnect, multiple vehicles, unknown session)
+
+### Stats
+- **398 tests** (workspace), all passing
+- Clippy clean (workspace)
+
+---
+
 ## [0.11.0] — 2026-03-20
 
 ### Phase 1 Future Work — Persistent Storage, OTLP Tracing, SBOM

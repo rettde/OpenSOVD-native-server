@@ -134,7 +134,11 @@ fn concurrent_audit_recording() {
     let mut seqs: Vec<u64> = all.iter().map(|e| e.seq).collect();
     seqs.sort();
     seqs.dedup();
-    assert_eq!(seqs.len(), 1000, "All 1000 sequence numbers should be unique");
+    assert_eq!(
+        seqs.len(),
+        1000,
+        "All 1000 sequence numbers should be unique"
+    );
 }
 
 #[test]
@@ -278,7 +282,16 @@ fn backup_restore_preserves_fault_state() {
         fm.report_fault(make_fault(&format!("f{i}"), "hpc", &format!("P{i:04}")));
     }
     let al = AuditLog::new();
-    al.record("admin", SovdAuditAction::ClearFaults, "c/hpc", "faults", "DELETE", "success", None, None);
+    al.record(
+        "admin",
+        SovdAuditAction::ClearFaults,
+        "c/hpc",
+        "faults",
+        "DELETE",
+        "success",
+        None,
+        None,
+    );
 
     let snap = backup::create_snapshot(&fm, &al, 0, 0);
     let json = backup::snapshot_to_json(&snap).unwrap();
@@ -326,7 +339,16 @@ fn disabled_audit_log_handles_all_operations() {
     };
     let al = AuditLog::from_config(&config);
 
-    al.record("u", SovdAuditAction::ReadData, "c", "d", "GET", "ok", None, None);
+    al.record(
+        "u",
+        SovdAuditAction::ReadData,
+        "c",
+        "d",
+        "GET",
+        "ok",
+        None,
+        None,
+    );
     assert!(al.is_empty());
     assert!(al.query(&AuditFilter::default()).is_empty());
     assert!(al.recent(10).is_empty());

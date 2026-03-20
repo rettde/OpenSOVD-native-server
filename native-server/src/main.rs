@@ -66,6 +66,12 @@ struct AppConfig {
     /// Persistent storage configuration (F1)
     #[serde(default)]
     storage: StorageConfig,
+    /// Prometheus metrics endpoint configuration (F7)
+    #[serde(default)]
+    metrics: MetricsConfig,
+    /// Secret provider configuration (F4)
+    #[serde(default)]
+    secrets: SecretsConfig,
 
     // ── Backend configuration ───────────────────────────────────────────
     /// External SOVD backends (CDA instances, native SOVD endpoints)
@@ -138,6 +144,7 @@ impl Default for LoggingConfig {
 /// sled_path = "./data/sovd.sled"      # only used when backend = "sled"
 /// ```
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // Fields read behind `persist` feature gate
 struct StorageConfig {
     /// Storage backend: "memory" (default, volatile) or "sled" (persistent, requires `persist` feature).
     #[serde(default = "StorageConfig::default_backend")]
@@ -161,6 +168,103 @@ impl Default for StorageConfig {
         Self {
             backend: Self::default_backend(),
             sled_path: Self::default_sled_path(),
+        }
+    }
+}
+
+/// Secret provider configuration (F4).
+///
+/// ```toml
+/// [secrets]
+/// provider = "vault"                     # "env" (default) | "vault" | "static"
+/// vault_addr = "http://vault:8200"
+/// vault_mount = "secret"
+/// vault_path_prefix = "sovd/"
+/// vault_cache_ttl_secs = 300
+/// ```
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)] // Fields read behind `vault` feature gate
+struct SecretsConfig {
+    /// Secret provider: "env" (default), "vault" (requires `vault` feature), or "static".
+    #[serde(default = "SecretsConfig::default_provider")]
+    provider: String,
+    /// Vault server address (only used when provider = "vault").
+    #[serde(default)]
+    vault_addr: Option<String>,
+    /// Vault authentication token. Falls back to VAULT_TOKEN env var.
+    #[serde(default)]
+    vault_token: Option<String>,
+    /// Vault KV v2 mount path (default: "secret").
+    #[serde(default = "SecretsConfig::default_mount")]
+    vault_mount: String,
+    /// Vault path prefix within the mount (default: "sovd/").
+    #[serde(default = "SecretsConfig::default_prefix")]
+    vault_path_prefix: String,
+    /// Cache TTL in seconds (default: 300 = 5 min).
+    #[serde(default = "SecretsConfig::default_ttl")]
+    vault_cache_ttl_secs: u64,
+}
+
+impl SecretsConfig {
+    fn default_provider() -> String {
+        "env".to_owned()
+    }
+    fn default_mount() -> String {
+        "secret".to_owned()
+    }
+    fn default_prefix() -> String {
+        "sovd/".to_owned()
+    }
+    fn default_ttl() -> u64 {
+        300
+    }
+}
+
+impl Default for SecretsConfig {
+    fn default() -> Self {
+        Self {
+            provider: Self::default_provider(),
+            vault_addr: None,
+            vault_token: None,
+            vault_mount: Self::default_mount(),
+            vault_path_prefix: Self::default_prefix(),
+            vault_cache_ttl_secs: Self::default_ttl(),
+        }
+    }
+}
+
+/// Prometheus metrics endpoint configuration (F7).
+///
+/// ```toml
+/// [metrics]
+/// enabled = true       # default: true
+/// path = "/metrics"    # default
+/// ```
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)] // `path` field reserved for custom metrics endpoint path
+struct MetricsConfig {
+    /// Enable the Prometheus scrape endpoint. Default: true.
+    #[serde(default = "MetricsConfig::default_enabled")]
+    enabled: bool,
+    /// HTTP path for the metrics endpoint. Default: "/metrics".
+    #[serde(default = "MetricsConfig::default_path")]
+    path: String,
+}
+
+impl MetricsConfig {
+    fn default_enabled() -> bool {
+        true
+    }
+    fn default_path() -> String {
+        "/metrics".to_owned()
+    }
+}
+
+impl Default for MetricsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: Self::default_enabled(),
+            path: Self::default_path(),
         }
     }
 }
@@ -247,7 +351,8 @@ impl AppConfig {
 #[allow(clippy::too_many_lines)]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration (figment: TOML file + env overrides)
-    let config: AppConfig = Figment::new()
+    #[allow(unused_mut)] // mut needed when `vault` feature populates auth from Vault
+    let mut config: AppConfig = Figment::new()
         .merge(Toml::file("opensovd-native-server.toml"))
         .merge(Toml::file("config/opensovd-native-server.toml"))
         .merge(Env::prefixed("SOVD_").split("__"))
@@ -348,6 +453,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
 
+    // ── Secret provider (F4) — populate auth config from Vault if configured ──
+    if config.secrets.provider.eq_ignore_ascii_case("vault") {
+        #[cfg(feature = "vault")]
+        {
+            let vault_addr = config
+                .secrets
+                .vault_addr
+                .clone()
+                .unwrap_or_else(|| "http://127.0.0.1:8200".to_owned());
+            let vault_config = native_core::VaultConfig {
+                addr: vault_addr,
+                token: config.secrets.vault_token.clone().unwrap_or_default(),
+                mount: config.secrets.vault_mount.clone(),
+                path_prefix: config.secrets.vault_path_prefix.clone(),
+                cache_ttl: std::time::Duration::from_secs(config.secrets.vault_cache_ttl_secs),
+            };
+            let vault = native_core::VaultSecretProvider::new(vault_config);
+            use native_interfaces::SecretProvider as _;
+            info!(
+                "Secret provider: Vault ({})",
+                config
+                    .secrets
+                    .vault_addr
+                    .as_deref()
+                    .unwrap_or("http://127.0.0.1:8200")
+            );
+
+            // Populate auth secrets from Vault (if not already set in config)
+            if config.auth.jwt_secret.is_none() {
+                if let Some(secret) = vault.get_secret("jwt_secret") {
+                    info!("Loaded jwt_secret from Vault");
+                    config.auth.jwt_secret = Some(secret);
+                }
+            }
+            if config.auth.api_key.is_none() {
+                if let Some(key) = vault.get_secret("api_key") {
+                    info!("Loaded api_key from Vault");
+                    config.auth.api_key = Some(key);
+                }
+            }
+        }
+        #[cfg(not(feature = "vault"))]
+        {
+            eprintln!("Warning: secrets.provider = \"vault\" but `vault` feature not enabled — using env provider");
+        }
+    } else {
+        info!("Secret provider: {}", config.secrets.provider);
+    }
+
     info!("OpenSOVD-native-server starting");
     info!("Server: {}:{}", config.server.host, config.server.port);
 
@@ -435,28 +589,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Audit log enabled (in-memory, {} max entries)", 10_000);
 
     // ── Historical diagnostic storage (W2.2 + F1) ─────────────────────
-    let history_store: Arc<dyn native_interfaces::StorageBackend> =
-        match config.storage.backend.as_str() {
-            #[cfg(feature = "persist")]
-            "sled" => {
-                let store = native_core::SledStorage::open(&config.storage.sled_path)
-                    .map_err(|e| format!("Failed to open sled at '{}': {e}", config.storage.sled_path))?;
-                info!(path = %config.storage.sled_path, "Persistent storage: sled");
-                Arc::new(store)
-            }
-            #[cfg(not(feature = "persist"))]
-            "sled" => {
-                return Err("storage.backend = \"sled\" requires the `persist` feature flag".into());
-            }
-            _ => {
-                info!("Storage backend: in-memory (volatile)");
-                Arc::new(native_interfaces::InMemoryStorage::new())
-            }
-        };
-    let history = Arc::new(HistoryService::new(
-        history_store,
-        HistoryConfig::default(),
-    ));
+    let history_store: Arc<dyn native_interfaces::StorageBackend> = match config
+        .storage
+        .backend
+        .as_str()
+    {
+        #[cfg(feature = "persist")]
+        "sled" => {
+            let store = native_core::SledStorage::open(&config.storage.sled_path).map_err(|e| {
+                format!("Failed to open sled at '{}': {e}", config.storage.sled_path)
+            })?;
+            info!(path = %config.storage.sled_path, "Persistent storage: sled");
+            Arc::new(store)
+        }
+        #[cfg(not(feature = "persist"))]
+        "sled" => {
+            return Err("storage.backend = \"sled\" requires the `persist` feature flag".into());
+        }
+        _ => {
+            info!("Storage backend: in-memory (volatile)");
+            Arc::new(native_interfaces::InMemoryStorage::new())
+        }
+    };
+    let history = Arc::new(HistoryService::new(history_store, HistoryConfig::default()));
 
     // E2.4 + W2.2: Background compaction task — prunes expired history entries
     {
@@ -507,18 +662,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         data_catalog: Arc::new(native_interfaces::StaticDataCatalogProvider::new()),
     };
-    // ── Bridge routes (Wave 3, W3.1) ─────────────────────────────────
+    // ── Bridge routes (Wave 3, W3.1 + F3 WebSocket) ───────────────────
     let app = if config.bridge.enabled {
-        let bridge_transport = Arc::new(InMemoryBridgeTransport::new());
+        // Select bridge transport based on feature flags and config
+        #[cfg(feature = "ws-bridge")]
+        let bridge_transport: Arc<dyn native_interfaces::BridgeTransport> = {
+            let ws = Arc::new(native_core::WsBridgeTransport::new(config.bridge.clone()));
+            if config.bridge.listen_addr.is_some() {
+                if let Err(e) = ws.start_accept_loop().await {
+                    tracing::warn!(error = %e, "WebSocket bridge accept loop failed to start — falling back to in-memory");
+                } else {
+                    info!("WebSocket bridge transport active");
+                }
+            }
+            ws
+        };
+        #[cfg(not(feature = "ws-bridge"))]
+        let bridge_transport: Arc<dyn native_interfaces::BridgeTransport> =
+            Arc::new(InMemoryBridgeTransport::new());
+
         let bridge_state = BridgeState {
             transport: bridge_transport,
             config: config.bridge.clone(),
         };
         info!("Cloud bridge mode enabled");
         let bridge_router = native_sovd::bridge::build_bridge_router(bridge_state);
-        build_router(state, config.auth).nest("/sovd/v1/x-bridge", bridge_router)
+        build_router(state, config.auth, config.metrics.enabled)
+            .nest("/sovd/v1/x-bridge", bridge_router)
     } else {
-        build_router(state, config.auth)
+        build_router(state, config.auth, config.metrics.enabled)
     };
 
     if config.tenant.enabled {

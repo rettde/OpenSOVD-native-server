@@ -294,12 +294,9 @@ mod tests {
     #[test]
     fn from_config_applies_overrides() {
         let config = FeatureFlagConfig {
-            overrides: [
-                ("rate_limit".to_owned(), false),
-                ("auth".to_owned(), false),
-            ]
-            .into_iter()
-            .collect(),
+            overrides: [("rate_limit".to_owned(), false), ("auth".to_owned(), false)]
+                .into_iter()
+                .collect(),
         };
         let ff = FeatureFlags::from_config(&config);
         assert!(!ff.is_enabled(flags::RATE_LIMIT));

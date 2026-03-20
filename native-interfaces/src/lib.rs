@@ -30,8 +30,8 @@ pub use diag::{
     TesterPresentMode, TesterPresentType, UdsResponse,
 };
 pub use error::{ConnectionError, DiagServiceError, DoipGatewaySetupError, SomeIpError};
+pub use feature_flags::{FeatureFlagConfig, FeatureFlags, SharedFeatureFlags};
 pub use oem::{DefaultProfile, OemProfile};
 pub use secrets::{EnvSecretProvider, SecretProvider, StaticSecretProvider};
 pub use storage::{InMemoryStorage, StorageBackend};
-pub use feature_flags::{FeatureFlagConfig, FeatureFlags, SharedFeatureFlags};
 pub use tenant::{MultiTenantConfig, TenantContext, TenantIsolation};

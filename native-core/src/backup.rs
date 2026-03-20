@@ -197,7 +197,16 @@ mod tests {
         fm.report_fault(make_fault("f2", "brake", "P0200"));
 
         let al = AuditLog::new();
-        al.record("alice", SovdAuditAction::ReadData, "c/hpc", "data", "GET", "success", None, None);
+        al.record(
+            "alice",
+            SovdAuditAction::ReadData,
+            "c/hpc",
+            "data",
+            "GET",
+            "success",
+            None,
+            None,
+        );
 
         let snap = create_snapshot(&fm, &al, 10, 5);
         assert_eq!(snap.version, SNAPSHOT_VERSION);
@@ -214,7 +223,16 @@ mod tests {
         fm.report_fault(make_fault("f1", "hpc", "P0100"));
 
         let al = AuditLog::new();
-        al.record("u", SovdAuditAction::ReadData, "c", "d", "GET", "ok", None, None);
+        al.record(
+            "u",
+            SovdAuditAction::ReadData,
+            "c",
+            "d",
+            "GET",
+            "ok",
+            None,
+            None,
+        );
 
         let snap = create_snapshot(&fm, &al, 0, 0);
         let json = snapshot_to_json(&snap).unwrap();
@@ -232,7 +250,16 @@ mod tests {
         fm.report_fault(make_fault("f1", "hpc", "P0100"));
 
         let al = AuditLog::new();
-        al.record("u", SovdAuditAction::ReadData, "c", "d", "GET", "ok", None, None);
+        al.record(
+            "u",
+            SovdAuditAction::ReadData,
+            "c",
+            "d",
+            "GET",
+            "ok",
+            None,
+            None,
+        );
 
         let snap = create_snapshot(&fm, &al, 0, 0);
 

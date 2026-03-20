@@ -42,7 +42,12 @@ base64 = { workspace = true }
 # Persistent FaultManager (optional)
 sled = { workspace = true, optional = true }
 
+# WebSocket bridge transport (optional, F3)
+tokio-tungstenite = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+
 [dev-dependencies]
+tokio-tungstenite = { workspace = true }
 axum = { workspace = true, features = ["tokio", "json", "http1"] }
 tempfile = { workspace = true }
 criterion = { workspace = true }
@@ -55,3 +60,7 @@ harness = false
 default = []
 # Enable sled-based persistent storage for FaultManager
 persist = ["dep:sled"]
+# Enable HashiCorp Vault secret provider (F4)
+vault = []
+# Enable WebSocket bridge transport (F3)
+ws-bridge = ["dep:tokio-tungstenite", "dep:futures"]

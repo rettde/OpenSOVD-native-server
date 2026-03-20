@@ -17,9 +17,7 @@
 use std::sync::Arc;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use native_core::{
-    AuditLog, FaultManager, HistoryConfig, HistoryService,
-};
+use native_core::{AuditLog, FaultManager, HistoryConfig, HistoryService};
 use native_interfaces::sovd::*;
 use native_interfaces::InMemoryStorage;
 
@@ -118,7 +116,16 @@ fn bench_audit_log(c: &mut Criterion) {
     group.bench_function("query_100_of_1000", |b| {
         let al = AuditLog::new();
         for _ in 0..1000 {
-            al.record("u", SovdAuditAction::ReadData, "c", "d", "GET", "ok", None, None);
+            al.record(
+                "u",
+                SovdAuditAction::ReadData,
+                "c",
+                "d",
+                "GET",
+                "ok",
+                None,
+                None,
+            );
         }
         let filter = native_core::audit_log::AuditFilter {
             caller: None,
@@ -135,7 +142,16 @@ fn bench_audit_log(c: &mut Criterion) {
     group.bench_function("verify_chain_1000", |b| {
         let al = AuditLog::new();
         for _ in 0..1000 {
-            al.record("u", SovdAuditAction::ReadData, "c", "d", "GET", "ok", None, None);
+            al.record(
+                "u",
+                SovdAuditAction::ReadData,
+                "c",
+                "d",
+                "GET",
+                "ok",
+                None,
+                None,
+            );
         }
         b.iter(|| {
             black_box(al.verify_chain());
@@ -151,10 +167,7 @@ fn bench_history(c: &mut Criterion) {
     let mut group = c.benchmark_group("history");
 
     group.bench_function("record_fault", |b| {
-        let svc = HistoryService::new(
-            Arc::new(InMemoryStorage::new()),
-            HistoryConfig::default(),
-        );
+        let svc = HistoryService::new(Arc::new(InMemoryStorage::new()), HistoryConfig::default());
         let fault = make_fault("f1", "hpc", "P0100");
         b.iter(|| {
             svc.record_fault(black_box(&fault));
@@ -204,7 +217,16 @@ fn bench_backup(c: &mut Criterion) {
         }
         let al = AuditLog::new();
         for _ in 0..100 {
-            al.record("u", SovdAuditAction::ReadData, "c", "d", "GET", "ok", None, None);
+            al.record(
+                "u",
+                SovdAuditAction::ReadData,
+                "c",
+                "d",
+                "GET",
+                "ok",
+                None,
+                None,
+            );
         }
         b.iter(|| {
             black_box(native_core::create_snapshot(&fm, &al, 0, 0));
