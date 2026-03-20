@@ -1,0 +1,1219 @@
+{
+  "components": {
+    "schemas": {
+      "Capability": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "ConfigurationDetail": {
+        "properties": {
+          "data": {},
+          "id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DataResourceCollection": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DataResourceSummary"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "DataResourceSummary": {
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "category"
+        ],
+        "type": "object"
+      },
+      "DataResourceValue": {
+        "properties": {
+          "data": {},
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "data"
+        ],
+        "type": "object"
+      },
+      "EntityCollection": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EntityRef"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "EntityRef": {
+        "properties": {
+          "href": {
+            "format": "uri-reference",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "href"
+        ],
+        "type": "object"
+      },
+      "ExecutionCollection": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ExecutionRef"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ExecutionRef": {
+        "properties": {
+          "href": {
+            "format": "uri-reference",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "FaultCollection": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FaultSummary"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "FaultDetail": {
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/FaultSummary"
+          }
+        },
+        "type": "object"
+      },
+      "FaultSummary": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "fault_name": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "fault_name"
+        ],
+        "type": "object"
+      },
+      "LogCollection": {
+        "properties": {
+          "items": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ModeCollection": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ModeSummary"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ModeDetail": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "value"
+        ],
+        "type": "object"
+      },
+      "ModeSummary": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "OperationCollection": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OperationSummary"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "OperationSummary": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "proximity_proof_required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "proximity_proof_required"
+        ],
+        "type": "object"
+      },
+      "SovdError": {
+        "properties": {
+          "error_code": {
+            "example": "SOVD-0001",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error_code",
+          "message"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "in": "header",
+        "name": "X-API-Key",
+        "type": "apiKey"
+      },
+      "BearerAuth": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "SOVD Capability Description File — ISO 17978-3 / ASAM SOVD V1.1.0.",
+    "license": {
+      "name": "Apache-2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0"
+    },
+    "title": "OpenSOVD-native-server CDF",
+    "version": "1.1.0",
+    "x-sovd-applicability": {
+      "offline": false,
+      "online": true
+    },
+    "x-sovd-version": "1.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "server_info",
+        "parameters": [
+          {
+            "description": "If true, include the JSON schema of the resource in the response (§6.2.6)",
+            "in": "query",
+            "name": "include-schema",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capability"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "SOVD server capability (§7.6.3)",
+        "tags": [
+          "Discovery"
+        ]
+      },
+      "x-sovd-name": "SOVD Server"
+    },
+    "/apps": {
+      "get": {
+        "operationId": "list_apps",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityCollection"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List applications (§7.6.2.1)",
+        "tags": [
+          "Discovery"
+        ]
+      },
+      "x-sovd-name": "Applications"
+    },
+    "/components": {
+      "get": {
+        "operationId": "list_components",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityCollection"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Discover contained entities (§7.6.2.1)",
+        "tags": [
+          "Components"
+        ]
+      },
+      "x-sovd-name": "Components"
+    },
+    "/components/{component_id}": {
+      "get": {
+        "operationId": "get_component",
+        "parameters": [
+          {
+            "description": "If true, include the JSON schema of the resource in the response (§6.2.6)",
+            "in": "query",
+            "name": "include-schema",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capability"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get component capabilities (§7.6.3)",
+        "tags": [
+          "Components"
+        ]
+      },
+      "x-sovd-name": "Component"
+    },
+    "/components/{component_id}/bulk-data": {
+      "get": {
+        "operationId": "bulk_data",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Bulk data access (§7.20)",
+        "tags": [
+          "Data"
+        ]
+      }
+    },
+    "/components/{component_id}/configurations": {
+      "get": {
+        "operationId": "read_config",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationDetail"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Read configuration (§7.12)",
+        "tags": [
+          "Configuration"
+        ]
+      }
+    },
+    "/components/{component_id}/data": {
+      "get": {
+        "operationId": "list_data",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResourceCollection"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Query data resources (§7.9.3)",
+        "tags": [
+          "Data"
+        ]
+      }
+    },
+    "/components/{component_id}/data/{data_id}": {
+      "get": {
+        "operationId": "read_data",
+        "parameters": [
+          {
+            "description": "If true, include the JSON schema of the resource in the response (§6.2.6)",
+            "in": "query",
+            "name": "include-schema",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResourceValue"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Read data value (§7.9.4)",
+        "tags": [
+          "Data"
+        ]
+      },
+      "put": {
+        "operationId": "write_data",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Written"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Write data value (§7.9.6)",
+        "tags": [
+          "Data"
+        ]
+      },
+      "x-sovd-data-category": "currentData",
+      "x-sovd-name": "DataResource",
+      "x-sovd-unit": "unspecified"
+    },
+    "/components/{component_id}/faults": {
+      "delete": {
+        "operationId": "clear_faults",
+        "responses": {
+          "204": {
+            "description": "Cleared"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Clear all faults (§7.8)",
+        "tags": [
+          "Faults"
+        ]
+      },
+      "get": {
+        "operationId": "list_faults",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FaultCollection"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Query faults (§7.8.2)",
+        "tags": [
+          "Faults"
+        ]
+      }
+    },
+    "/components/{component_id}/faults/{fault_id}": {
+      "delete": {
+        "operationId": "clear_fault",
+        "responses": {
+          "204": {
+            "description": "Cleared"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Clear single fault (§7.8)",
+        "tags": [
+          "Faults"
+        ]
+      },
+      "get": {
+        "operationId": "get_fault",
+        "parameters": [
+          {
+            "description": "If true, include the JSON schema of the resource in the response (§6.2.6)",
+            "in": "query",
+            "name": "include-schema",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FaultDetail"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get fault detail (§7.8.3)",
+        "tags": [
+          "Faults"
+        ]
+      },
+      "x-sovd-name": "Fault"
+    },
+    "/components/{component_id}/locks": {
+      "get": {
+        "operationId": "get_lock",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Lock status"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get lock status (§7.17)",
+        "tags": [
+          "Locking"
+        ]
+      }
+    },
+    "/components/{component_id}/logs": {
+      "get": {
+        "operationId": "get_logs",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogCollection"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get diagnostic logs (§7.21)",
+        "tags": [
+          "Logs"
+        ]
+      }
+    },
+    "/components/{component_id}/modes": {
+      "get": {
+        "operationId": "list_modes",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeCollection"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Query modes (§7.16.2)",
+        "tags": [
+          "Mode"
+        ]
+      }
+    },
+    "/components/{component_id}/modes/{mode_id}": {
+      "get": {
+        "operationId": "get_mode",
+        "parameters": [
+          {
+            "description": "If true, include the JSON schema of the resource in the response (§6.2.6)",
+            "in": "query",
+            "name": "include-schema",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeDetail"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get mode detail (§7.16.3)",
+        "tags": [
+          "Mode"
+        ]
+      },
+      "put": {
+        "operationId": "activate_mode",
+        "parameters": [
+          {
+            "description": "If true, include the JSON schema of the resource in the response (§6.2.6)",
+            "in": "query",
+            "name": "include-schema",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeDetail"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Activate mode (§7.16.4)",
+        "tags": [
+          "Mode"
+        ]
+      },
+      "x-sovd-name": "Mode"
+    },
+    "/components/{component_id}/operations": {
+      "get": {
+        "operationId": "list_operations",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationCollection"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List operations (§7.14.3)",
+        "tags": [
+          "Operations"
+        ]
+      },
+      "x-sovd-proximity-proof-required": false
+    },
+    "/components/{component_id}/operations/{op_id}/executions": {
+      "get": {
+        "operationId": "list_executions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionCollection"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List executions (§7.14.4)",
+        "tags": [
+          "Operations"
+        ]
+      },
+      "post": {
+        "operationId": "execute_operation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionRef"
+                }
+              }
+            },
+            "description": "Accepted",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Execute operation (§7.14.6)",
+        "tags": [
+          "Operations"
+        ]
+      },
+      "x-sovd-name": "Executions",
+      "x-sovd-retention-timeout": 3600
+    },
+    "/components/{component_id}/operations/{op_id}/executions/{exec_id}": {
+      "get": {
+        "operationId": "get_execution",
+        "parameters": [
+          {
+            "description": "If true, include the JSON schema of the resource in the response (§6.2.6)",
+            "in": "query",
+            "name": "include-schema",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionRef"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get execution status (§7.14)",
+        "tags": [
+          "Operations"
+        ]
+      },
+      "put": {
+        "operationId": "control_execution",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionRef"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Control execution (§7.14)",
+        "tags": [
+          "Operations"
+        ]
+      },
+      "x-sovd-name": "Execution"
+    },
+    "/updates": {
+      "get": {
+        "operationId": "list_updates",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SovdError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List software updates (§7.18)",
+        "tags": [
+          "Updates"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "ApiKeyAuth": []
+    },
+    {
+      "BearerAuth": []
+    }
+  ],
+  "servers": [
+    {
+      "description": "SOVD API v1",
+      "url": "/sovd/v1"
+    }
+  ],
+  "tags": [
+    {
+      "description": "Server info and metadata",
+      "name": "Discovery"
+    },
+    {
+      "description": "Component management (§7.6)",
+      "name": "Components"
+    },
+    {
+      "description": "Data read/write (§7.9)",
+      "name": "Data"
+    },
+    {
+      "description": "Fault management (§7.8)",
+      "name": "Faults"
+    },
+    {
+      "description": "Operation execution (§7.14)",
+      "name": "Operations"
+    },
+    {
+      "description": "Component capabilities (§7.6.3)",
+      "name": "Capabilities"
+    },
+    {
+      "description": "Resource locking (§7.17)",
+      "name": "Locking"
+    },
+    {
+      "description": "Mode/session management (§7.16)",
+      "name": "Mode"
+    },
+    {
+      "description": "Configuration (§7.12)",
+      "name": "Configuration"
+    },
+    {
+      "description": "Diagnostic logs (§7.21)",
+      "name": "Logs"
+    },
+    {
+      "description": "Software updates (§7.18)",
+      "name": "Updates"
+    }
+  ]
+}
