@@ -1,6 +1,6 @@
 # Integrated Roadmap — Architecture, Features & Enterprise Readiness
 
-> OpenSOVD-native-server v0.7+ development roadmap.
+> OpenSOVD-native-server v0.10.0 development roadmap.
 > Designed for **enterprise fleet diagnostics** across the full vehicle lifecycle.
 
 ---
@@ -46,8 +46,8 @@
 |----|------|------|--------|------------|--------|
 | W1.1 | 🔧 | Fine-grained AuthZ (`AuthzPolicy` in `OemProfile`) | ✅ Done | — | M |
 | W1.2 | 🔧 | Diagnostic Audit Trail (`AuditLog`, `/audit` endpoint, handler instrumentation) | ✅ Done | W1.1 | M |
-| W1.3 | 🔧 | Full Apps/Funcs entities (`EntityBackend` trait, real `/apps` + `/funcs` routes with nested resources) | ⏳ Next | A1.5 | L |
-| W1.4 | 🔧 | Software-Package Lifecycle (upload, progress, activate, rollback) | Pending | A1.5 | M |
+| W1.3 | 🔧 | Full Apps/Funcs entities (`EntityBackend` trait, real `/apps` + `/funcs` routes with nested resources) | ✅ Done | A1.5 | L |
+| W1.4 | 🔧 | Software-Package Lifecycle (upload, progress, activate, rollback) | ✅ Done | A1.5 | M |
 
 ### Wave 1 Enterprise Hardening (parallel with features)
 
@@ -190,24 +190,24 @@ Wave 1  ┌─ A1.1 Graceful shutdown ✅  W1.1 AuthZ ✅            E1.1 Audit 
         │  A1.5 AppState sub-groups ✅
         └  A1.6 Error catalog ✅
         
-Wave 2  ┌─ A2.1 StorageBackend       W2.1 KPI/system-info     E2.1 TLS hot-reload
-        │  A2.2 Backend trait diet    W2.2 Historical storage  E2.2 Deployment pkg
-        │  A2.3 Secrets abstraction   W2.3 Fault debouncing    E2.3 Backup/restore
-        │  A2.4 OTLP export          W2.4 Mode/session model  E2.4 Feature flags
-        └  A2.5 Per-client rate limit                          T2.1 Load tests
-                                                               T2.2 Fault injection
+Wave 2  ┌─ A2.1 StorageBackend ✅     W2.1 KPI/system-info ✅  E2.1 TLS hot-reload ⏳
+        │  A2.2 Backend trait diet ✅  W2.2 Historical storage⏳ E2.2 Deployment pkg ⏳
+        │  A2.3 Secrets abstraction ✅ W2.3 Fault debouncing ✅  E2.3 Backup/restore ⏳
+        │  A2.4 OTLP export ✅        W2.4 Mode/session model✅ E2.4 Feature flags ⏳
+        └  A2.5 Per-client rate ✅                              T2.1 Load tests ⏳
+                                                                T2.2 Fault injection ⏳
 
-Wave 3  ┌─ A3.1 ADR: Bridge topology W3.1 Cloud bridge        E3.1 Client SDKs
-        │  A3.2 ADR: Tenant isolation W3.2 Multi-tenant        E3.2 Compliance export
-        │  A3.3 TenantContext MW      W3.3 Variant-aware       E3.3 Canary deploy
-        │  A3.4 BridgeTransport trait W3.4 Zero-trust
-        └  A3.5 API versioning
+Wave 3  ┌─ A3.1 ADR: Bridge topo ✅  W3.1 Cloud bridge ✅      E3.1 Client SDKs ✅
+        │  A3.2 ADR: Tenant isol ✅   W3.2 Multi-tenant ✅      E3.2 Compliance export✅
+        │  A3.3 TenantContext MW ✅    W3.3 Variant-aware ✅     E3.3 Canary deploy ✅
+        │  A3.4 BridgeTransport ✅     W3.4 Zero-trust ✅
+        └  A3.5 API versioning ✅
 
-Wave 4  ┌─ A4.1 ADR: Ontology std    W4.1 Semantic data       E4.1 Data contract ver.
-(AI)    │  A4.2 DataCatalogProvider   W4.2 Batch export        E4.2 Export access ctrl
-        │  A4.3 ADR: Export format    W4.3 Fault ontology      E4.3 Reproducibility
-        └                             W4.4 Schema endpoint     T4.1 Schema stability
-                                      W4.5 Data-change SSE
+Wave 4  ┌─ A4.1 ADR: Ontology std ✅ W4.1 Semantic data ✅     E4.1 Data contract ver.✅
+(AI)    │  A4.2 DataCatalogProv. ✅   W4.2 Batch export ✅      E4.2 Export access ctrl✅
+        │  A4.3 ADR: Export fmt ✅    W4.3 Fault ontology ✅    E4.3 Reproducibility ✅
+        └                             W4.4 Schema endpoint ✅   T4.1 Schema stability ✅
+                                      W4.5 Data-change SSE ✅
 ```
 
 ---
@@ -230,7 +230,9 @@ These are the critical moments where a refactoring decision **must** be made to 
 
 ---
 
-## Current Status (v0.10.0 — Wave 4 complete)
+## Current Status (v0.10.0)
+
+### Implemented ✅
 
 | Item | Status | Tests |
 |------|--------|-------|
@@ -276,4 +278,18 @@ These are the critical moments where a refactoring decision **must** be made to 
 | T4.1 Schema stability regression | ✅ Complete | 4 tests |
 | **Total** | **312 tests, clippy clean** | |
 
-**All Waves 1–4 complete.**
+### Open / Future Work ⏳
+
+| Item | Wave | Description |
+|------|------|-------------|
+| W2.2 | 2 | Historical diagnostic storage — time-range queries on faults, KPIs, audit |
+| E2.1 | 2 | TLS certificate hot-reload — watch cert files, reload without restart |
+| E2.2 | 2 | Deployment packaging — distroless container, systemd unit, Helm chart |
+| E2.3 | 2 | Backup/restore for diagnostic state |
+| E2.4 | 2 | Feature flags / runtime toggle |
+| T1.1 | 1 | OpenAPI contract test in CI |
+| T2.1 | 2 | Load/stress test harness (criterion + k6) |
+| T2.2 | 2 | Fault injection tests (backend failure simulation) |
+
+**All core SOVD functionality (Waves 1–4) and Wave 3–4 enterprise hardening complete.  
+Wave 2 enterprise hardening (E2.1–E2.4) and test infrastructure (T1.1, T2.1–T2.2) remain open.**

@@ -24,9 +24,9 @@ Format follows [Michael Nygard's ADR template](https://cognitect.com/blog/2011/1
 
 | ID | Title | Status | Key files |
 |----|-------|--------|-----------|
-| [A2.1](A2.1-storage-backend-trait.md) | StorageBackend Trait | ✅ Accepted | `native-core/src/storage.rs` |
+| [A2.1](A2.1-storage-backend-trait.md) | StorageBackend Trait | ✅ Accepted | `native-interfaces/src/storage.rs` |
 | [A2.2](A2.2-backend-trait-diet.md) | ComponentBackend Trait Diet | ✅ Accepted | `native-interfaces/src/backend.rs` |
-| [A2.3](A2.3-secrets-abstraction.md) | Secrets Abstraction | ✅ Accepted | `native-core/src/secrets.rs` |
+| [A2.3](A2.3-secrets-abstraction.md) | Secrets Abstraction | ✅ Accepted | `native-interfaces/src/secrets.rs` |
 | [A2.4](A2.4-otlp-export.md) | OpenTelemetry OTLP Export | ✅ Accepted | `native-sovd/src/routes.rs`, `native-server/src/main.rs` |
 | [A2.5](A2.5-per-client-rate-limiting.md) | Per-Client Rate Limiting | ✅ Accepted | `native-sovd/src/rate_limit.rs` |
 
