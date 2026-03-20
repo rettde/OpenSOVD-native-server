@@ -577,6 +577,9 @@ pub fn build_router(state: AppState, auth_config: AuthConfig, metrics_enabled: b
         .route("/funcs/{func_id}", get(get_func))
         .route("/funcs/{func_id}/data", get(list_func_data))
         .route("/funcs/{func_id}/data/{data_id}", get(read_func_data))
+        // Areas (ISO 17978-3 §4.2.3 — gated by DiscoveryPolicy::areas_enabled)
+        .route("/areas", get(list_areas))
+        .route("/areas/{area_id}", get(get_area))
         // Configuration (§7.8)
         .route(
             "/components/{component_id}/configurations",
@@ -3048,6 +3051,9 @@ async fn list_apps(
     State(state): State<AppState>,
     axum::extract::Query(params): axum::extract::Query<PaginationParams>,
 ) -> Result<Json<Collection<serde_json::Value>>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    if !state.security.oem_profile.as_discovery_policy().apps_enabled() {
+        return Err(not_found("Entity type 'apps' is not available in this OEM profile"));
+    }
     let items = state.entity_backend.list_apps();
     Ok(Json(
         paginate(items, &params)?.with_context("$metadata#apps"),
@@ -3058,6 +3064,9 @@ async fn get_app(
     State(state): State<AppState>,
     Path(app_id): Path<String>,
 ) -> Result<Json<SovdApp>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    if !state.security.oem_profile.as_discovery_policy().apps_enabled() {
+        return Err(not_found("Entity type 'apps' is not available in this OEM profile"));
+    }
     state
         .entity_backend
         .get_app(&app_id)
@@ -3132,6 +3141,9 @@ async fn list_funcs(
     State(state): State<AppState>,
     axum::extract::Query(params): axum::extract::Query<PaginationParams>,
 ) -> Result<Json<Collection<serde_json::Value>>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    if !state.security.oem_profile.as_discovery_policy().funcs_enabled() {
+        return Err(not_found("Entity type 'funcs' is not available in this OEM profile"));
+    }
     let items = state.entity_backend.list_funcs();
     Ok(Json(
         paginate(items, &params)?.with_context("$metadata#funcs"),
@@ -3142,6 +3154,9 @@ async fn get_func(
     State(state): State<AppState>,
     Path(func_id): Path<String>,
 ) -> Result<Json<SovdFunc>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    if !state.security.oem_profile.as_discovery_policy().funcs_enabled() {
+        return Err(not_found("Entity type 'funcs' is not available in this OEM profile"));
+    }
     state
         .entity_backend
         .get_func(&func_id)
@@ -3170,6 +3185,35 @@ async fn read_func_data(
         .await
         .map_err(|ref e| diag_error(e))?;
     Ok(Json(value))
+}
+
+// ── Areas (ISO 17978-3 §4.2.3 — gated by DiscoveryPolicy) ───────────────
+
+async fn list_areas(
+    State(state): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<PaginationParams>,
+) -> Result<Json<Collection<serde_json::Value>>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    if !state.security.oem_profile.as_discovery_policy().areas_enabled() {
+        return Err(not_found("Entity type 'areas' is not available in this OEM profile"));
+    }
+    let items = state.entity_backend.list_areas();
+    Ok(Json(
+        paginate(items, &params)?.with_context("$metadata#areas"),
+    ))
+}
+
+async fn get_area(
+    State(state): State<AppState>,
+    Path(area_id): Path<String>,
+) -> Result<Json<native_interfaces::sovd::SovdArea>, (StatusCode, Json<SovdErrorEnvelope>)> {
+    if !state.security.oem_profile.as_discovery_policy().areas_enabled() {
+        return Err(not_found("Entity type 'areas' is not available in this OEM profile"));
+    }
+    state
+        .entity_backend
+        .get_area(&area_id)
+        .map(Json)
+        .ok_or_else(|| not_found(&format!("Area '{area_id}' not found")))
 }
 
 // ── Configuration (SOVD §7.8) ───────────────────────────────────────────
@@ -6487,5 +6531,99 @@ mod mock_backend_tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    // ── DiscoveryPolicy gating tests ─────────────────────────────────────
+
+    /// OEM profile that disables areas (like MBDS §2.2)
+    #[derive(Debug, Clone)]
+    struct AreasDisabledProfile;
+    impl native_interfaces::oem::AuthPolicy for AreasDisabledProfile {}
+    impl native_interfaces::oem::AuthzPolicy for AreasDisabledProfile {}
+    impl native_interfaces::oem::EntityIdPolicy for AreasDisabledProfile {}
+    impl native_interfaces::oem::CdfPolicy for AreasDisabledProfile {}
+    impl native_interfaces::oem::DiscoveryPolicy for AreasDisabledProfile {
+        fn areas_enabled(&self) -> bool {
+            false
+        }
+    }
+    impl native_interfaces::oem::OemProfile for AreasDisabledProfile {
+        fn name(&self) -> &'static str {
+            "Test (areas disabled)"
+        }
+        fn id(&self) -> &'static str {
+            "test-no-areas"
+        }
+        fn as_auth_policy(&self) -> &dyn native_interfaces::oem::AuthPolicy {
+            self
+        }
+        fn as_authz_policy(&self) -> &dyn native_interfaces::oem::AuthzPolicy {
+            self
+        }
+        fn as_entity_id_policy(&self) -> &dyn native_interfaces::oem::EntityIdPolicy {
+            self
+        }
+        fn as_discovery_policy(&self) -> &dyn native_interfaces::oem::DiscoveryPolicy {
+            self
+        }
+        fn as_cdf_policy(&self) -> &dyn native_interfaces::oem::CdfPolicy {
+            self
+        }
+    }
+
+    fn mock_state_with_profile(profile: Arc<dyn native_interfaces::OemProfile>) -> AppState {
+        let mut state = mock_state();
+        state.security.oem_profile = profile;
+        state
+    }
+
+    #[tokio::test]
+    async fn areas_disabled_returns_404() {
+        let state = mock_state_with_profile(Arc::new(AreasDisabledProfile));
+        let app = build_router(state, AuthConfig::default(), true);
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/areas")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn areas_disabled_get_by_id_returns_404() {
+        let state = mock_state_with_profile(Arc::new(AreasDisabledProfile));
+        let app = build_router(state, AuthConfig::default(), true);
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/areas/zone-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn areas_enabled_returns_200() {
+        let app = mock_router(); // DefaultProfile — areas_enabled() = true
+        let resp = app
+            .oneshot(
+                Request::get("/sovd/v1/areas")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["@odata.context"], "$metadata#areas");
+        assert_eq!(json["@odata.count"], 0); // empty default
     }
 }

@@ -15,9 +15,9 @@
 use async_trait::async_trait;
 
 use crate::sovd::{
-    SovdBulkDataCategory, SovdBulkDataItem, SovdBulkWriteItem, SovdCapabilities, SovdComponent,
-    SovdComponentConfig, SovdDataCatalogEntry, SovdFault, SovdGroup, SovdMode, SovdOperation,
-    SovdSoftwarePackage,
+    SovdArea, SovdBulkDataCategory, SovdBulkDataItem, SovdBulkWriteItem, SovdCapabilities,
+    SovdComponent, SovdComponentConfig, SovdDataCatalogEntry, SovdFault, SovdGroup, SovdMode,
+    SovdOperation, SovdSoftwarePackage,
 };
 use crate::DiagServiceError;
 
@@ -399,5 +399,17 @@ pub trait EntityBackend: Send + Sync {
         Err(DiagServiceError::NotFound(Some(
             "func data not found".into(),
         )))
+    }
+
+    // ── Areas (gated by DiscoveryPolicy::areas_enabled) ───────────────────
+
+    /// List all E/E architecture areas
+    fn list_areas(&self) -> Vec<SovdArea> {
+        vec![]
+    }
+
+    /// Get a single area by ID
+    fn get_area(&self, _area_id: &str) -> Option<SovdArea> {
+        None
     }
 }

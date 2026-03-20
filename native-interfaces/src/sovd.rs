@@ -586,6 +586,23 @@ pub struct SovdFunc {
     pub source_components: Vec<String>,
 }
 
+// ── Areas (ISO 17978-3 §4.2.3) ──────────────────────────────────────────────
+
+/// SOVD area entity — an E/E architecture zone or domain
+/// (e.g. "front-left", "powertrain-zone", "adas-domain").
+///
+/// Gated by `DiscoveryPolicy::areas_enabled()` — MBDS §2.2 forbids this entity type.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SovdArea {
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Component IDs belonging to this area
+    #[serde(rename = "componentIds")]
+    pub component_ids: Vec<String>,
+}
+
 // ── Software Packages (SOVD Standard §5.5.10) ────────────────────────────
 
 /// SOVD software package resource with full lifecycle fields
