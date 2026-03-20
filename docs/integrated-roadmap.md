@@ -109,13 +109,13 @@
 
 | ID | Area | Description | Priority | Effort |
 |----|------|-------------|----------|--------|
-| F5 | **E2E test suite** | Testcontainers with CDA + demo-ecu for full gateway round-trip | Medium | L |
-| F8 | **SOME/IP real transport** | Validate `native-comm-someip` FFI against real COVESA/vsomeip | Low | L |
+| F5 | **E2E test suite** | **Out of Scope** — requires CDA binary + Docker infra · [HowTo](howto-f5-e2e-test-suite.md) | — | — |
+| F8 | **SOME/IP real transport** | **Out of Scope** — requires Linux + vsomeip + SOME/IP peer · [HowTo](howto-f8-someip-real-transport.md) | — | — |
 | F9 | ~~SQL storage backend~~ | **Implemented** as Snapshot/Rollback (AUTOSAR `ara::per` / S-CORE pattern) — see above | ✅ | — |
 | F12 | **SW package signature verification** | Firmware integrity check before activation (ISO 24089) | High | M |
 | F13 | ~~Horizontal scaling~~ | **Removed** — no In-Vehicle use case; AUTOSAR HPC is always single-instance | — | — |
 | F14 | **mTLS backend connections** | TLS for Gateway → CDA / backend links | Medium | S |
-| F15 | **OIDC E2E validation** | Full auth flow tested against real IdP (Keycloak) | Medium | S |
+| F15 | **OIDC E2E validation** | **Out of Scope** — requires Keycloak instance · [HowTo](howto-f15-oidc-e2e-validation.md) | — | — |
 
 **Effort key:** S = 1–2 days · M = 3–5 days · L = 1–2 weeks
 
