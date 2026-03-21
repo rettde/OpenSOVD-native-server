@@ -7,6 +7,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.17.1-rc] — 2026-03-20
+
+### Security
+- **RUSTSEC-2026-0044** — `aws-lc-sys` 0.38.0 → 0.39.0 (X.509 Name Constraints bypass)
+- **RUSTSEC-2026-0048** — `aws-lc-sys` 0.38.0 → 0.39.0 (CRL scope logic error, severity 7.4)
+- **RUSTSEC-2026-0049** — `rustls-webpki` 0.103.9 → 0.103.10 (CRL Distribution Point matching)
+- `cargo audit` now **0 vulnerabilities** (3 unmaintained warnings — transitive via `sled`)
+- `cargo fmt` enforced across workspace
+
+### Internal
+- All 7 workspace crates bumped to **0.17.1-rc**
+
+---
+
 ## [0.17.0-rc] — 2026-03-20
 
 ### Code Review Fixes

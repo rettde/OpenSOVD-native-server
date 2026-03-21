@@ -96,7 +96,12 @@ fn filter_paths(paths: &serde_json::Value, segment: &str) -> serde_json::Value {
 
 fn build_schemas() -> serde_json::Value {
     let mut map = serde_json::Map::new();
-    for sub in [core_schemas(), resource_schemas(), f15_f16_schemas(), f17_f18_schemas()] {
+    for sub in [
+        core_schemas(),
+        resource_schemas(),
+        f15_f16_schemas(),
+        f17_f18_schemas(),
+    ] {
         if let serde_json::Value::Object(m) = sub {
             map.extend(m);
         }
@@ -1277,12 +1282,20 @@ mod tests {
     fn contract_f15_rxswin_paths_present() {
         let spec = build_openapi_json();
         let paths = spec["paths"].as_object().unwrap();
-        let rxswin_paths = ["/rxswin", "/rxswin/report", "/rxswin/{component_id}", "/update-provenance"];
+        let rxswin_paths = [
+            "/rxswin",
+            "/rxswin/report",
+            "/rxswin/{component_id}",
+            "/update-provenance",
+        ];
         for path in &rxswin_paths {
             assert!(paths.contains_key(*path), "RXSWIN path missing: {path}");
         }
         assert!(paths["/rxswin"]["get"].is_object(), "/rxswin GET missing");
-        assert!(paths["/rxswin"]["x-sovd-name"].is_string(), "/rxswin x-sovd-name missing");
+        assert!(
+            paths["/rxswin"]["x-sovd-name"].is_string(),
+            "/rxswin x-sovd-name missing"
+        );
     }
 
     #[test]
@@ -1309,7 +1322,10 @@ mod tests {
         );
         let sa = &paths["/x-uds/components/{component_id}/security-access"];
         assert!(sa["post"].is_object(), "security-access POST missing");
-        assert!(sa["post"]["requestBody"].is_object(), "security-access requestBody missing");
+        assert!(
+            sa["post"]["requestBody"].is_object(),
+            "security-access requestBody missing"
+        );
     }
 
     #[test]
@@ -1325,8 +1341,14 @@ mod tests {
         for path in &ucm_paths {
             assert!(paths.contains_key(*path), "UCM path missing: {path}");
         }
-        assert!(paths["/ucm/campaigns"]["get"].is_object(), "UCM campaigns GET missing");
-        assert!(paths["/ucm/campaigns"]["post"].is_object(), "UCM campaigns POST missing");
+        assert!(
+            paths["/ucm/campaigns"]["get"].is_object(),
+            "UCM campaigns GET missing"
+        );
+        assert!(
+            paths["/ucm/campaigns"]["post"].is_object(),
+            "UCM campaigns POST missing"
+        );
     }
 
     #[test]
@@ -1334,13 +1356,22 @@ mod tests {
         let spec = build_openapi_json();
         let schemas = spec["components"]["schemas"].as_object().unwrap();
         let f15_f18_schemas = [
-            "RxswinEntry", "RxswinReport", "UpdateProvenanceEntry",
-            "TaraAsset", "TaraThreatEntry", "TaraExport",
-            "UdsSecurityLevel", "UdsSecurityAccessRequest", "UdsSecurityAccessResponse",
+            "RxswinEntry",
+            "RxswinReport",
+            "UpdateProvenanceEntry",
+            "TaraAsset",
+            "TaraThreatEntry",
+            "TaraExport",
+            "UdsSecurityLevel",
+            "UdsSecurityAccessRequest",
+            "UdsSecurityAccessResponse",
             "UcmCampaign",
         ];
         for schema in &f15_f18_schemas {
-            assert!(schemas.contains_key(*schema), "F15-F18 schema missing: {schema}");
+            assert!(
+                schemas.contains_key(*schema),
+                "F15-F18 schema missing: {schema}"
+            );
         }
     }
 

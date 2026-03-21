@@ -21,8 +21,10 @@ use native_interfaces::data_catalog::DataCatalogProvider;
 use native_interfaces::firmware_verify::FirmwareVerifier;
 use native_interfaces::oem::OemProfile;
 use native_interfaces::sovd::SovdSoftwarePackage;
+use native_interfaces::sovd::{
+    RxswinEntry, TaraAsset, TaraThreatEntry, UcmCampaign, UpdateProvenanceEntry,
+};
 use native_interfaces::sovd::{SovdOperationExecution, SovdProximityChallenge};
-use native_interfaces::sovd::{RxswinEntry, TaraAsset, TaraThreatEntry, UcmCampaign, UpdateProvenanceEntry};
 use native_interfaces::{ComponentBackend, EntityBackend, ExtendedDiagBackend};
 
 // ── Sub-state: Diagnostics ──────────────────────────────────────────────────

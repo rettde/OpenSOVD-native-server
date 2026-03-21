@@ -603,7 +603,7 @@ checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
 name = "demo-ecu"
-version = "0.17.0-rc"
+version = "0.17.1-rc"
 dependencies = [
  "axum 0.8.8",
  "chrono",
@@ -1586,7 +1586,7 @@ dependencies = [
 
 [[package]]
 name = "native-comm-someip"
-version = "0.17.0-rc"
+version = "0.17.1-rc"
 dependencies = [
  "cc",
  "libc",
@@ -1600,7 +1600,7 @@ dependencies = [
 
 [[package]]
 name = "native-core"
-version = "0.17.0-rc"
+version = "0.17.1-rc"
 dependencies = [
  "async-trait",
  "axum 0.8.8",
@@ -1627,7 +1627,7 @@ dependencies = [
 
 [[package]]
 name = "native-health"
-version = "0.17.0-rc"
+version = "0.17.1-rc"
 dependencies = [
  "serde_json",
  "sysinfo",
@@ -1636,7 +1636,7 @@ dependencies = [
 
 [[package]]
 name = "native-interfaces"
-version = "0.17.0-rc"
+version = "0.17.1-rc"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1656,7 +1656,7 @@ dependencies = [
 
 [[package]]
 name = "native-sovd"
-version = "0.17.0-rc"
+version = "0.17.1-rc"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1748,7 +1748,7 @@ checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
 name = "opensovd-native-server"
-version = "0.17.0-rc"
+version = "0.17.1-rc"
 dependencies = [
  "axum 0.8.8",
  "axum-server",

@@ -5,7 +5,7 @@
 
 [package]
 name = "native-interfaces"
-version = "0.17.0-rc"
+version = "0.17.1-rc"
 edition.workspace = true
 license.workspace = true
 homepage.workspace = true

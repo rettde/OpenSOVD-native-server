@@ -408,7 +408,11 @@ fn apply_odata_orderby<T: Serialize + Clone>(
     let mut indices: Vec<usize> = (0..items.len()).collect();
     indices.sort_by(|&a, &b| {
         let cmp = cmp_json_values(keys[a].as_ref(), keys[b].as_ref());
-        if desc { cmp.reverse() } else { cmp }
+        if desc {
+            cmp.reverse()
+        } else {
+            cmp
+        }
     });
 
     // Apply permutation: clone sorted items back (T: Clone)
@@ -684,7 +688,10 @@ pub fn build_router(state: AppState, auth_config: AuthConfig, metrics_enabled: b
         .route("/tara/threats", get(list_tara_threats))
         .route("/tara/export", get(tara_export))
         // UCM campaigns (F18, AUTOSAR R24-11)
-        .route("/ucm/campaigns", get(list_ucm_campaigns).post(create_ucm_campaign))
+        .route(
+            "/ucm/campaigns",
+            get(list_ucm_campaigns).post(create_ucm_campaign),
+        )
         .route("/ucm/campaigns/{campaign_id}", get(get_ucm_campaign))
         .route(
             "/ucm/campaigns/{campaign_id}/execute",
@@ -1459,7 +1466,6 @@ fn evict_and_insert<V: Clone>(
     insertion_order: &std::sync::Mutex<std::collections::VecDeque<String>>,
     max_entries: usize,
 ) {
-
     let mut order = insertion_order
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -3631,9 +3637,7 @@ async fn list_tara_threats(
 }
 
 /// GET /sovd/v1/tara/export — full TARA export (ISO/SAE 21434 §15 work product)
-async fn tara_export(
-    State(state): State<AppState>,
-) -> Json<native_interfaces::sovd::TaraExport> {
+async fn tara_export(State(state): State<AppState>) -> Json<native_interfaces::sovd::TaraExport> {
     let assets = state.runtime.tara_assets.read().clone();
     let threats = state.runtime.tara_threats.read().clone();
     let mitigated = threats
@@ -3710,8 +3714,10 @@ async fn security_access(
     caller: CallerIdentity,
     Path(component_id): Path<String>,
     Json(req): Json<native_interfaces::sovd::UdsSecurityAccessRequest>,
-) -> Result<Json<native_interfaces::sovd::UdsSecurityAccessResponse>, (StatusCode, Json<SovdErrorEnvelope>)>
-{
+) -> Result<
+    Json<native_interfaces::sovd::UdsSecurityAccessResponse>,
+    (StatusCode, Json<SovdErrorEnvelope>),
+> {
     state
         .backend
         .get_component(&component_id)
@@ -3807,8 +3813,10 @@ async fn create_ucm_campaign(
     State(state): State<AppState>,
     caller: CallerIdentity,
     Json(body): Json<CreateUcmCampaignRequest>,
-) -> Result<(StatusCode, Json<native_interfaces::sovd::UcmCampaign>), (StatusCode, Json<SovdErrorEnvelope>)>
-{
+) -> Result<
+    (StatusCode, Json<native_interfaces::sovd::UcmCampaign>),
+    (StatusCode, Json<SovdErrorEnvelope>),
+> {
     if body.target_components.is_empty() {
         return Err(bad_request("targetComponents must not be empty"));
     }
@@ -5947,9 +5955,7 @@ mod tests {
             .oneshot(
                 Request::post("/sovd/v1/ucm/campaigns")
                     .header("content-type", "application/json")
-                    .body(Body::from(
-                        r#"{"name":"Bad","targetComponents":[]}"#,
-                    ))
+                    .body(Body::from(r#"{"name":"Bad","targetComponents":[]}"#))
                     .unwrap(),
             )
             .await
@@ -6375,11 +6381,23 @@ mod tests {
     #[test]
     fn odata_filter_bool_value() {
         #[derive(Serialize, Clone, Debug, PartialEq)]
-        struct Item { name: String, active: bool }
+        struct Item {
+            name: String,
+            active: bool,
+        }
         let items = vec![
-            Item { name: "a".into(), active: true },
-            Item { name: "b".into(), active: false },
-            Item { name: "c".into(), active: true },
+            Item {
+                name: "a".into(),
+                active: true,
+            },
+            Item {
+                name: "b".into(),
+                active: false,
+            },
+            Item {
+                name: "c".into(),
+                active: true,
+            },
         ];
         let result = apply_odata_filter(items, "active eq 'true'").unwrap();
         assert_eq!(result.len(), 2);
@@ -6390,11 +6408,23 @@ mod tests {
     #[test]
     fn odata_filter_numeric_value() {
         #[derive(Serialize, Clone, Debug)]
-        struct Item { id: u32, label: String }
+        struct Item {
+            id: u32,
+            label: String,
+        }
         let items = vec![
-            Item { id: 1, label: "first".into() },
-            Item { id: 2, label: "second".into() },
-            Item { id: 3, label: "third".into() },
+            Item {
+                id: 1,
+                label: "first".into(),
+            },
+            Item {
+                id: 2,
+                label: "second".into(),
+            },
+            Item {
+                id: 3,
+                label: "third".into(),
+            },
         ];
         let result = apply_odata_filter(items, "id eq 2").unwrap();
         assert_eq!(result.len(), 1);
@@ -6405,11 +6435,23 @@ mod tests {
     #[test]
     fn odata_orderby_sorts_correctly() {
         #[derive(Serialize, Clone, Debug)]
-        struct Item { name: String, score: u32 }
+        struct Item {
+            name: String,
+            score: u32,
+        }
         let mut items = vec![
-            Item { name: "c".into(), score: 30 },
-            Item { name: "a".into(), score: 10 },
-            Item { name: "b".into(), score: 20 },
+            Item {
+                name: "c".into(),
+                score: 30,
+            },
+            Item {
+                name: "a".into(),
+                score: 10,
+            },
+            Item {
+                name: "b".into(),
+                score: 20,
+            },
         ];
         apply_odata_orderby(&mut items, "name").unwrap();
         let names: Vec<_> = items.iter().map(|i| i.name.as_str()).collect();
@@ -6420,7 +6462,9 @@ mod tests {
     #[test]
     fn odata_orderby_desc() {
         #[derive(Serialize, Clone, Debug)]
-        struct Item { val: u32 }
+        struct Item {
+            val: u32,
+        }
         let mut items = vec![Item { val: 1 }, Item { val: 3 }, Item { val: 2 }];
         apply_odata_orderby(&mut items, "val desc").unwrap();
         let vals: Vec<_> = items.iter().map(|i| i.val).collect();

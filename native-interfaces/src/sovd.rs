@@ -953,7 +953,11 @@ pub struct UdsSecurityLevel {
     /// Whether this level is currently unlocked
     pub unlocked: bool,
     /// Services protected by this level (UDS SIDs, hex strings)
-    #[serde(rename = "protectedServices", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        rename = "protectedServices",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub protected_services: Vec<String>,
 }
 
@@ -1017,7 +1021,11 @@ pub struct UcmCampaign {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     /// Per-component transfer states
-    #[serde(rename = "transferStates", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        rename = "transferStates",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub transfer_states: Vec<UcmTransferState>,
 }
 
