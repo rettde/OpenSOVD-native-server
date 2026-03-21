@@ -7,6 +7,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.19.0-rc] — 2026-03-21
+
+### Architecture
+- **RFC-0001 — OpenSOVD Core Integration:** Formal proposal for merging the native-server codebase into `eclipse-opensovd/opensovd-core` (inc/liebherr branch), targeting opensovd-core v0.5.0. Covers crate restructuring, trait alignment (`DataProvider`, `FaultProvider`, `Topology`), `ServerBuilder` adoption, auth generalization, and extraction of `opensovd-faults` + `opensovd-extensions` crates. See [`docs/rfc/RFC-0001-opensovd-core-integration.md`](docs/rfc/RFC-0001-opensovd-core-integration.md).
+
+### CI
+- **CDF Validation fix:** Added `x-sovd-name` to all 12 vendor-extension paths in OpenAPI spec; downgraded `sovd-path-structure` to `warn` pending upstream fix ([dsagmbh/sovd-cdf-validator#1](https://github.com/dsagmbh/sovd-cdf-validator/pull/1))
+- **Clippy:** Fixed `clippy::single_match_else` in `watchdog.rs` (Rust 1.94 stricter linting)
+- **Format:** Fixed `cargo fmt` diff in `auth.rs`
+
+### Internal
+- All 7 workspace crates bumped to **0.19.0-rc**
+
+---
+
 ## [0.18.0-rc] — 2026-03-21
 
 ### Security Hardening (1.0 Blockers)

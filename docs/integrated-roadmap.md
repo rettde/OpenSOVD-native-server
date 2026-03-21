@@ -1,4 +1,4 @@
-# Roadmap — OpenSOVD-native-server v0.17.1-rc
+# Roadmap — OpenSOVD-native-server v0.19.0-rc
 
 ---
 
@@ -132,6 +132,19 @@
 | UDS security access | `/sovd/v1/x-uds/components/{id}/security-access` | POST |
 
 **Total: 469 tests · Clippy pedantic clean · ISO 17978-3 conformant (51/51)**
+
+### v0.5.0 — OpenSOVD Core Integration (RFC-0001)
+
+| Phase | Scope | Effort |
+|-------|-------|--------|
+| 1. Structure alignment | Rename `native-*` → `opensovd-*`, SPDX headers, inline health crate | 1 day |
+| 2. Core trait integration | `DataProvider` adapter, `Topology` migration, `FaultProvider`/`OperationProvider`/`ModeProvider`/`LockProvider` traits | 3 days |
+| 3. ServerBuilder adoption | Replace manual axum router with `Server::builder()` pattern | 2 days |
+| 4. Auth generalization | `OidcAuthenticator` + `RbacAuthorizer` implementing opensovd-core traits | 1 day |
+| 5. Feature crate extraction | `opensovd-faults`, `opensovd-extensions`, `opensovd-someip` | 4 days |
+| 6. Cleanup | Remove `openapi.rs`, `ComponentRouter`, adapt bridge to gateway binary | 1 day |
+
+See [RFC-0001](rfc/RFC-0001-opensovd-core-integration.md) for full design and rationale.
 
 ---
 

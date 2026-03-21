@@ -48,6 +48,12 @@ Format follows [Michael Nygard's ADR template](https://cognitect.com/blog/2011/1
 | [A4.2](A4.2-data-catalog-provider-trait.md) | DataCatalogProvider Trait | ✅ Accepted | `native-interfaces/src/data_catalog.rs`, `native-sovd/src/state.rs` |
 | [A4.3](A4.3-batch-export-format.md) | Batch Export Format (NDJSON) | ✅ Accepted | `native-sovd/src/routes.rs` |
 
+### RFCs
+
+| ID | Title | Status | Target |
+|----|-------|--------|--------|
+| [RFC-0001](../rfc/RFC-0001-opensovd-core-integration.md) | Integration into Eclipse OpenSOVD Core | Proposed | opensovd-core v0.5.0 |
+
 ---
 
 ## Conventions
