@@ -94,7 +94,7 @@ SOVD Clients (HTTP/JSON)
 - **Vault Secrets** — Optional HashiCorp Vault KV v2 provider via `vault` feature flag
 - **WebSocket Bridge** — Optional `tokio-tungstenite` cloud↔vehicle tunnel via `ws-bridge` feature flag
 - **OTLP Tracing** — Optional OpenTelemetry export via `otlp` feature flag
-- **484 tests**, 81% line coverage, Clippy pedantic clean, `#![forbid(unsafe_code)]` (except vSomeIP FFI)
+- **489 tests**, 81% line coverage, Clippy pedantic clean, `#![forbid(unsafe_code)]` (except vSomeIP FFI)
 
 ## Workspace Structure
 

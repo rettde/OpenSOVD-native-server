@@ -60,6 +60,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "assert-json-diff"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47e4f2b81832e72834d7518d8487a0396a28cc408186a2e8854c0f98011faf12"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "async-stream"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -602,8 +612,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
+name = "deadpool"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0be2b1d1d6ec8d846f05e137292d0b89133caf95ef33695424c09568bdd39b1b"
+dependencies = [
+ "deadpool-runtime",
+ "lazy_static",
+ "num_cpus",
+ "tokio",
+]
+
+[[package]]
+name = "deadpool-runtime"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "092966b41edc516079bdf31ec78a2e0588d1d0c08f78b91d8307215928642b2b"
+
+[[package]]
 name = "demo-ecu"
-version = "0.17.1-rc"
+version = "0.18.0-rc"
 dependencies = [
  "axum 0.8.8",
  "chrono",
@@ -1586,7 +1614,7 @@ dependencies = [
 
 [[package]]
 name = "native-comm-someip"
-version = "0.17.1-rc"
+version = "0.18.0-rc"
 dependencies = [
  "cc",
  "libc",
@@ -1600,7 +1628,7 @@ dependencies = [
 
 [[package]]
 name = "native-core"
-version = "0.17.1-rc"
+version = "0.18.0-rc"
 dependencies = [
  "async-trait",
  "axum 0.8.8",
@@ -1627,7 +1655,7 @@ dependencies = [
 
 [[package]]
 name = "native-health"
-version = "0.17.1-rc"
+version = "0.18.0-rc"
 dependencies = [
  "serde_json",
  "sysinfo",
@@ -1636,7 +1664,7 @@ dependencies = [
 
 [[package]]
 name = "native-interfaces"
-version = "0.17.1-rc"
+version = "0.18.0-rc"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1656,7 +1684,7 @@ dependencies = [
 
 [[package]]
 name = "native-sovd"
-version = "0.17.1-rc"
+version = "0.18.0-rc"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1689,6 +1717,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "wiremock",
 ]
 
 [[package]]
@@ -1735,6 +1764,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "num_cpus"
+version = "1.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91df4bbde75afed763b708b7eee1e8e7651e02d97f6d5dd763e89367e957b23b"
+dependencies = [
+ "hermit-abi",
+ "libc",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1748,7 +1787,7 @@ checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
 name = "opensovd-native-server"
-version = "0.17.1-rc"
+version = "0.18.0-rc"
 dependencies = [
  "axum 0.8.8",
  "axum-server",
@@ -3751,6 +3790,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "wiremock"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08db1edfb05d9b3c1542e521aea074442088292f00b5f28e435c714a98f85031"
+dependencies = [
+ "assert-json-diff",
+ "base64",
+ "deadpool",
+ "futures",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "log",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
 ]
 
 [[package]]

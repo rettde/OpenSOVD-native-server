@@ -1111,4 +1111,350 @@ mod tests {
             .map_or_else(TenantContext::default, TenantContext::new);
         assert!(ctx.is_default());
     }
+
+    // ── OIDC integration tests (S5 — wiremock) ──────────────────────────
+
+    // Test RSA 2048-bit key pair (for OIDC/JWKS integration tests only)
+    const TEST_RSA_PRIVATE_PEM: &[u8] = b"-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDs5u51vmrYlv9v
+sZTr7vnmsLPhKCYTG4+RmafvjsgWYaX5zdeogq1YyJUIG3DedPa8JE/QE1eCtwqC
+JXCoX4mZa0ZE82U4OStPqgAiSYA4IqvaxOLCIYqn/oZ2dirRTX/iMgY7MdKn64Nm
+q+kZsUCrOJRqNMcJBqV8bnZwRpDkUgnLAQINBrRzeelGJTadwT7ApaOYfj830sEE
+QxX8KQ5J0Ek3FO0fN4qcrGRlfj1cNrk9maZ2NIWNrGKvbH1cR/utMeTefpra9p/w
+Iw40nXF76VDAAhxSr051rap51sGBJUZ0UItrGWrFRWqCcLfu6BVMgKOBicjMblfy
+2kY2ou/fAgMBAAECggEBAITgNoo2Rsm7UAS/Dy+Sd/rLy+kTUt/OyqU5ETfN1y6u
+kKDfswGiYkZ1IxpMAe/UnPwERfwIjUIVFsDO7TSTeaNixyQvfOufLUreqHqSzWcv
+E0N+wU1v8Myvd44EU5nYJU2jD1muZWCoOaih7fnqMMKY1q4Hckf+wV1cu/PXsLdO
+tEAoqB0xBXD1AXgX5+GRUSj1m3pzBEJA3FBbjna8dwhksnDZu8UeKq+wZpX45b2R
+BsQH3CCXF3OOFitCRjn3isZHTbBpWzg7mAkhonCPXeKFC5bXqF3fVOicOD6DlWDo
+KxYJfanpBc8HEdby4U62FHDj1XGAnGvYXf9FiDDaasECgYEA+peSATAskXb7iNgV
+zgX6Vn4TB9qIaldxG7kr8mIQS1EFJQhsBECJVu5l9pLtd2Owb0wST5bMhIXher+e
+8IjeR4o4fhPLlQR3sCsH7OXBbto+Q6ezKC+CyUJNgcNKjuW2NpYTZ9MGDG9Uq6MT
+z4ac1+0adqeW/gRg/p+MO9//CmECgYEA8gO6mw9V0WEG4zYiaETr6teE9ljQiGu1
+P3eQsBqxUqADxql+nHrMmGnCiZt+3sKqGMvQDywaNKxMkaPRzUkY0Lnq4ZhOMk7D
+aFSdPytmDZumycr9P0yXs75OH2A2cLYRgsb+uGPcEvYAVuxsQyXaGptvr6NiBOi8
+qziNJcEOoj8CgYEApL8tQBa51lCRAeB+RVpswJxWSp2DfdZLCFzu5YVPDRUQ+s3U
+pd7/6+UDp93kvM8PWbx7dVPA1YdnO9nq1lxFNmdKyKie+TNctLc1mKtcRlK5CKWi
+BVNm+oXaiusng1bGOpDj5Sg5G8e9tLGb/p2TU+oPsd5wSEP8uKmP+nVDKUECgYA7
+Qw5+ydKJ4uh82tSyE65xYzT73eOyhC1tzSlw9hhV0zkZfIe0aZ2P9NXePGVkxuZA
+DCh2jqYcH9TgFO1bB3s8IUqS02jSiNbwxUd8IHRtAKBm6X358hdzvDYFGNo731mK
+XJAjNtC9E+AhaONZzfsKaOWAbNGjwhnxE3f8trmOoQKBgGLJShBTUQEeMsRSGLhG
+ZPSq1w9LTQCcRAPswvZGwrbPek8Vc5FdQxnSPs8eHKfRIwAa/xGdZgI0pEvUVUJ1
+N4kpCAvdbQFuGEP3fPd8jDHqK6/hQ24xhWXRnuDOZuFKGGMyVRn7yXE4IwXd5nLu
+HlISSA80CY9hF8NIzg/eLW3M
+-----END PRIVATE KEY-----";
+
+    const TEST_RSA_N_B64URL: &str = "7Obudb5q2Jb_b7GU6-755rCz4SgmExuPkZmn747IFmGl-c3XqIKtWMiVCBtw3nT2vCRP0BNXgrcKgiVwqF-JmWtGRPNlODkrT6oAIkmAOCKr2sTiwiGKp_6GdnYq0U1_4jIGOzHSp-uDZqvpGbFAqziUajTHCQalfG52cEaQ5FIJywECDQa0c3npRiU2ncE-wKWjmH4_N9LBBEMV_CkOSdBJNxTtHzeKnKxkZX49XDa5PZmmdjSFjaxir2x9XEf7rTHk3n6a2vaf8CMONJ1xe-lQwAIcUq9Oda2qedbBgSVGdFCLaxlqxUVqgnC37ugVTICjgYnIzG5X8tpGNqLv3w";
+
+    const TEST_RSA_E_B64URL: &str = "AQAB";
+
+    #[tokio::test]
+    async fn oidc_discovery_fetches_jwks() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        // Mount OIDC discovery endpoint
+        let jwks_uri = format!("{}/jwks", mock_server.uri());
+        let discovery = serde_json::json!({
+            "issuer": mock_server.uri(),
+            "jwks_uri": jwks_uri,
+        });
+        Mock::given(method("GET"))
+            .and(path("/.well-known/openid-configuration"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&discovery))
+            .mount(&mock_server)
+            .await;
+
+        // Mount JWKS endpoint
+        let jwks = serde_json::json!({
+            "keys": [{
+                "kty": "RSA",
+                "n": TEST_RSA_N_B64URL,
+                "e": TEST_RSA_E_B64URL,
+                "kid": "test-key-1",
+                "use": "sig",
+                "alg": "RS256"
+            }]
+        });
+        Mock::given(method("GET"))
+            .and(path("/jwks"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&jwks))
+            .mount(&mock_server)
+            .await;
+
+        // Clear process-global JWKS cache to ensure fresh fetch
+        *jwks_cache().lock().await = None;
+
+        let (keyset, issuer) = fetch_jwks_cached(&mock_server.uri())
+            .await
+            .expect("JWKS fetch should succeed");
+
+        // Note: process-global JWKS cache may serve a hit from a parallel
+        // test, so we only assert structural properties, not exact values
+        // tied to this specific mock server instance.
+        assert!(!keyset.keys.is_empty(), "Expected at least one key");
+        assert_eq!(keyset.keys[0].kty, "RSA");
+        assert!(issuer.is_some(), "Issuer should be present");
+    }
+
+    #[tokio::test]
+    async fn oidc_jwt_round_trip_with_mock_provider() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        // Mount OIDC discovery + JWKS endpoints
+        let jwks_uri = format!("{}/jwks", mock_server.uri());
+        Mock::given(method("GET"))
+            .and(path("/.well-known/openid-configuration"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                    "issuer": mock_server.uri(),
+                    "jwks_uri": jwks_uri,
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/jwks"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                    "keys": [{
+                        "kty": "RSA",
+                        "n": TEST_RSA_N_B64URL,
+                        "e": TEST_RSA_E_B64URL,
+                        "kid": "test-key-1",
+                        "use": "sig",
+                        "alg": "RS256"
+                    }]
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        // Clear JWKS cache
+        *jwks_cache().lock().await = None;
+
+        // Fetch JWKS from mock provider
+        let (keyset, _) = fetch_jwks_cached(&mock_server.uri())
+            .await
+            .expect("JWKS fetch should succeed");
+
+        // Sign a JWT with the test private key
+        let encoding_key =
+            jsonwebtoken::EncodingKey::from_rsa_pem(TEST_RSA_PRIVATE_PEM).expect("valid PEM");
+        let now = chrono::Utc::now();
+        let claims = Claims {
+            sub: "oidc-test-user".into(),
+            exp: (now + chrono::Duration::hours(1)).timestamp() as usize,
+            iat: now.timestamp() as usize,
+            iss: Some(mock_server.uri()),
+            roles: vec!["diagnostic_technician".into()],
+            vin: None,
+            scope: Some("diagnostic_read diagnostic_write".into()),
+            tenant_id: Some("workshop-42".into()),
+        };
+
+        let mut header = jsonwebtoken::Header::new(Algorithm::RS256);
+        header.kid = Some("test-key-1".into());
+        let token =
+            jsonwebtoken::encode(&header, &claims, &encoding_key).expect("JWT encode failed");
+
+        // Validate the JWT against the JWKS key (simulating what validate_oidc_jwt does)
+        let key = keyset
+            .keys
+            .iter()
+            .find(|k| k.kty == "RSA" && k.kid.as_deref() == Some("test-key-1"))
+            .expect("Key not found in JWKS");
+
+        let decoding_key = DecodingKey::from_rsa_components(&key.n, &key.e)
+            .expect("RSA components should be valid");
+
+        let mut validation = Validation::new(Algorithm::RS256);
+        validation.set_issuer(&[&mock_server.uri()]);
+
+        let decoded = decode::<Claims>(&token, &decoding_key, &validation)
+            .expect("JWT validation should succeed");
+
+        assert_eq!(decoded.claims.sub, "oidc-test-user");
+        assert_eq!(decoded.claims.roles, vec!["diagnostic_technician"]);
+        assert_eq!(
+            decoded.claims.scope.as_deref(),
+            Some("diagnostic_read diagnostic_write")
+        );
+        assert_eq!(decoded.claims.tenant_id.as_deref(), Some("workshop-42"));
+    }
+
+    #[test]
+    fn oidc_jwks_truncation_limits_key_count() {
+        // Test the JWKS key-count truncation logic directly (avoids
+        // process-global cache race conditions in parallel test runs).
+        let keys: Vec<JwksKey> = (0..100)
+            .map(|i| JwksKey {
+                kty: "RSA".into(),
+                n: TEST_RSA_N_B64URL.into(),
+                e: TEST_RSA_E_B64URL.into(),
+                kid: Some(format!("key-{i}")),
+            })
+            .collect();
+
+        let mut keyset = JwksKeySet { keys };
+        assert_eq!(keyset.keys.len(), 100);
+
+        // Apply the same truncation logic as fetch_jwks_cached
+        if keyset.keys.len() > JWKS_MAX_KEYS {
+            keyset.keys.truncate(JWKS_MAX_KEYS);
+        }
+
+        assert_eq!(
+            keyset.keys.len(),
+            JWKS_MAX_KEYS,
+            "JWKS should be truncated to {JWKS_MAX_KEYS} keys"
+        );
+        assert_eq!(keyset.keys[0].kid.as_deref(), Some("key-0"));
+        assert_eq!(keyset.keys[63].kid.as_deref(), Some("key-63"));
+    }
+
+    #[tokio::test]
+    async fn oidc_rejects_expired_jwt() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/.well-known/openid-configuration"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                    "issuer": mock_server.uri(),
+                    "jwks_uri": format!("{}/jwks", mock_server.uri()),
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/jwks"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                    "keys": [{
+                        "kty": "RSA",
+                        "n": TEST_RSA_N_B64URL,
+                        "e": TEST_RSA_E_B64URL,
+                        "kid": "test-key-1",
+                        "use": "sig",
+                        "alg": "RS256"
+                    }]
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        *jwks_cache().lock().await = None;
+
+        let (keyset, _) = fetch_jwks_cached(&mock_server.uri())
+            .await
+            .expect("JWKS fetch should succeed");
+
+        // Sign an expired JWT
+        let encoding_key =
+            jsonwebtoken::EncodingKey::from_rsa_pem(TEST_RSA_PRIVATE_PEM).expect("valid PEM");
+        let expired_claims = Claims {
+            sub: "expired-user".into(),
+            exp: 1_000_000_000, // 2001 — long expired
+            iat: 999_999_000,
+            iss: Some(mock_server.uri()),
+            roles: vec![],
+            vin: None,
+            scope: None,
+            tenant_id: None,
+        };
+        let mut header = jsonwebtoken::Header::new(Algorithm::RS256);
+        header.kid = Some("test-key-1".into());
+        let token =
+            jsonwebtoken::encode(&header, &expired_claims, &encoding_key).expect("encode");
+
+        // Validate — should fail
+        let key = &keyset.keys[0];
+        let decoding_key =
+            DecodingKey::from_rsa_components(&key.n, &key.e).expect("valid components");
+        let mut validation = Validation::new(Algorithm::RS256);
+        validation.set_issuer(&[&mock_server.uri()]);
+
+        let result = decode::<Claims>(&token, &decoding_key, &validation);
+        assert!(result.is_err(), "Expired JWT must be rejected");
+    }
+
+    #[tokio::test]
+    async fn oidc_rejects_wrong_issuer() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/.well-known/openid-configuration"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                    "issuer": mock_server.uri(),
+                    "jwks_uri": format!("{}/jwks", mock_server.uri()),
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/jwks"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                    "keys": [{
+                        "kty": "RSA",
+                        "n": TEST_RSA_N_B64URL,
+                        "e": TEST_RSA_E_B64URL,
+                        "kid": "test-key-1",
+                        "use": "sig",
+                        "alg": "RS256"
+                    }]
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        *jwks_cache().lock().await = None;
+
+        let (keyset, _) = fetch_jwks_cached(&mock_server.uri())
+            .await
+            .expect("JWKS fetch should succeed");
+
+        // Sign a JWT with wrong issuer
+        let encoding_key =
+            jsonwebtoken::EncodingKey::from_rsa_pem(TEST_RSA_PRIVATE_PEM).expect("valid PEM");
+        let now = chrono::Utc::now();
+        let claims = Claims {
+            sub: "evil-user".into(),
+            exp: (now + chrono::Duration::hours(1)).timestamp() as usize,
+            iat: now.timestamp() as usize,
+            iss: Some("https://evil-issuer.example.com".into()),
+            roles: vec![],
+            vin: None,
+            scope: None,
+            tenant_id: None,
+        };
+        let mut header = jsonwebtoken::Header::new(Algorithm::RS256);
+        header.kid = Some("test-key-1".into());
+        let token = jsonwebtoken::encode(&header, &claims, &encoding_key).expect("encode");
+
+        let key = &keyset.keys[0];
+        let decoding_key =
+            DecodingKey::from_rsa_components(&key.n, &key.e).expect("valid components");
+        let mut validation = Validation::new(Algorithm::RS256);
+        validation.set_issuer(&[&mock_server.uri()]);
+
+        let result = decode::<Claims>(&token, &decoding_key, &validation);
+        assert!(result.is_err(), "JWT with wrong issuer must be rejected");
+    }
 }
