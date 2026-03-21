@@ -17,3 +17,7 @@ extends:
 rules:
   # Promote retention-timeout to error (recommended = warn)
   sovd-rules/x-sovd-retention-timeout-defined: error
+  # Downgrade path-structure to warn — our vendor-extension paths (rxswin,
+  # tara, ucm, update-provenance, x-uds) are not in the DSA regex whitelist
+  # but are legitimate ISO 14229 / UNECE R156 / ISO 21434 extensions.
+  sovd-rules/sovd-path-structure: warn
