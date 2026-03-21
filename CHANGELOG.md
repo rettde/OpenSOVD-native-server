@@ -7,6 +7,23 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.18.0-rc] — 2026-03-21
+
+### Security Hardening (1.0 Blockers)
+- **B2 — Entity ID validation:** Default `EntityIdPolicy` now restricts IDs to `[a-zA-Z0-9_.-]{1,128}`, preventing path traversal and injection when interpolated into backend URLs
+- **B3 — Security headers:** Every response now includes `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Cache-Control: no-store`, `Strict-Transport-Security: max-age=31536000`
+- **B4 — JWKS cache size limit:** OIDC JWKS endpoint responses capped at 64 keys to prevent memory exhaustion from malicious discovery documents
+
+### Documentation
+- **B1 — Stale docs updated:** Security audit → v0.17.1-rc, README test count → 484, roadmap header → v0.17.1-rc
+- **B5 — STABILITY.md:** API stability policy with semver guarantees for HTTP API, Rust traits, and configuration
+- **B6 — Experimental features:** `persist` and `ws-bridge` labeled as experimental in README with link to STABILITY.md
+
+### Internal
+- All 7 workspace crates bumped to **0.18.0-rc**
+
+---
+
 ## [0.17.1-rc] — 2026-03-20
 
 ### Security

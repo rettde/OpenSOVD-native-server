@@ -1,6 +1,6 @@
-# OpenSOVD-native-server — Security Audit v0.12.0
+# OpenSOVD-native-server — Security Audit v0.17.1-rc
 
-**Date:** 2026-03-20 (updated from v0.8.1 audit of 2026-03-15)
+**Date:** 2026-03-21 (updated from v0.12.0 audit of 2026-03-20)
 **Scope:** Full codebase review — authentication, authorization, input validation, secrets handling, dependency security, unsafe code, DoS vectors
 **Auditor:** Automated + manual code review
 
@@ -17,7 +17,7 @@
 | TLS | ✅ Available | rustls-based TLS via `axum-server`; configurable cert/key paths |
 | DoS Protection | ✅ Good | Concurrency limit (200), request timeout (30s), body size limit (2 MiB) |
 | Unsafe Code | ✅ Contained | `#![forbid(unsafe_code)]` on 7/8 crates; only `native-comm-someip` (FFI) |
-| Dependency Security | ✅ Good | CycloneDX SBOM generated in CI; `cargo-audit` recommended for vulnerability scanning |
+| Dependency Security | ✅ Strong | CycloneDX SBOM in CI; `cargo audit` mandatory in CI (0 vulnerabilities) |
 | Code Quality | ✅ Enforced | Clippy pedantic via `[workspace.lints]`; `unwrap_used`/`expect_used` warnings |
 
 **Overall: Production-ready for vehicle diagnostic gateway deployments with the noted recommendations.**
@@ -163,7 +163,7 @@
 | SSE polling interval | 2 seconds | `subscribe_faults` |
 | JWKS cache TTL | 5 minutes | `fetch_jwks_cached` |
 
-⚠️ **Recommendation:** Add rate limiting per client IP (currently no per-client throttling)
+✅ Per-client rate limiting via token-bucket (`rate_limit_middleware`, keyed by JWT `sub` / API key)
 
 ---
 
@@ -226,9 +226,10 @@ All justified with inline `#[allow(...)]` comments:
 
 ## 10. Test Coverage Requirements
 
-### 10.1 Current State (v0.8.1)
-- **269 tests** across workspace (all passing)
-- Test distribution: interfaces 33, core 75, uds 40, health 6, sovd 73
+### 10.1 Current State (v0.17.1-rc)
+- **484 tests** across workspace (all passing)
+- **81.4% line coverage / 73.9% function coverage** (`cargo-llvm-cov`)
+- Test distribution: interfaces 118, core 93, health 6, sovd 241, server 7+1, comm-someip 7
 
 ### 10.2 Enforcement (Makefile)
 ```
@@ -249,21 +250,19 @@ make ci        — full pipeline: lint + test + coverage + audit + release build
 
 ## 11. Recommendations (Priority Order)
 
-### High Priority
-1. **Install `cargo-audit` in CI** — run `cargo audit` on every build
-2. **Component ID validation** — restrict to `[a-zA-Z0-9_-]+` before interpolating into backend URLs
-3. **Rate limiting per client** — add `tower::limit::RateLimitLayer` or `governor` middleware
+### Implemented (since v0.8.1)
+1. ~~**Install `cargo-audit` in CI**~~ — ✅ mandatory CI job since v0.17.1-rc (0 vulnerabilities)
+2. ~~**Component ID validation**~~ — ✅ restricted to `[a-zA-Z0-9_.-]+` since v1.0.0-rc
+3. ~~**Rate limiting per client**~~ — ✅ token-bucket per JWT `sub` / API key since v0.9.0
+5. ~~**JWKS cache size limit**~~ — ✅ capped at 64 keys since v1.0.0-rc
+7. ~~**Structured audit logging**~~ — ✅ hash-chained `SovdAuditEntry` with JSON export since v0.9.0
+8. ~~**mTLS support**~~ — ✅ mTLS for backend connections since v0.13.0; serving mTLS via `axum-server`
+10. ~~**Security headers**~~ — ✅ `X-Content-Type-Options`, `X-Frame-Options`, `Strict-Transport-Security` since v1.0.0-rc
 
-### Medium Priority
+### Remaining
 4. **Multi-API-key support** — derive per-key identity hash instead of static `"api-key-client"`
-5. **JWKS cache size limit** — cap cached key count to prevent memory exhaustion
 6. **OIDC integration tests** — add mock OIDC provider test (e.g., `wiremock`)
-7. **Structured audit logging** — emit JSON audit events for all auth decisions
-
-### Low Priority
-8. **mTLS support** — for vehicle-to-diagnostic tool mutual authentication
 9. **TLS cipher suite configuration** — expose rustls config options
-10. **Security headers** — add `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`
 
 ---
 
@@ -277,8 +276,8 @@ The codebase demonstrates **strong security practices** for an automotive diagno
 - Clippy pedantic with `unwrap_used`/`expect_used` warnings enforced workspace-wide
 - DoS protection via multiple layers (concurrency, timeout, body size, eviction)
 
-The main gaps are **operational** (missing `cargo-audit` in CI, no rate limiting) rather than **architectural**. The 11 recommendations above would elevate the security posture from "strong" to "hardened production."
+Since the initial audit, 8 of 11 recommendations have been implemented. The remaining 3 items (multi-API-key, OIDC integration tests, TLS cipher config) are enhancements with no exploitable risk in the current architecture.
 
 ---
 
-*Audit initially performed against codebase v0.5.0 (2026-03-15), updated for v0.8.1 (2026-03-19). 269 tests passing. Clippy pedantic clean.*
+*Audit initially performed against v0.5.0 (2026-03-15), updated for v0.8.1 (2026-03-19), v0.12.0 (2026-03-20), v0.17.1-rc (2026-03-21). 484 tests passing. Clippy pedantic clean. cargo audit: 0 vulnerabilities.*

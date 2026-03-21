@@ -1,4 +1,4 @@
-# Roadmap — OpenSOVD-native-server v0.12.0
+# Roadmap — OpenSOVD-native-server v0.17.1-rc
 
 ---
 

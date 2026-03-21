@@ -90,6 +90,37 @@ async fn rate_limit_middleware(
     next.run(request).await
 }
 
+/// Security headers middleware — injects hardening headers into every response.
+///
+/// - `X-Content-Type-Options: nosniff` — prevents MIME-type sniffing
+/// - `X-Frame-Options: DENY` — prevents clickjacking via iframe embedding
+/// - `Cache-Control: no-store` — prevents caching of diagnostic data
+/// - `Strict-Transport-Security` — enforces HTTPS (1 year, includeSubDomains)
+async fn security_headers_middleware(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    headers.insert(
+        http::header::HeaderName::from_static("x-content-type-options"),
+        http::HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        http::header::HeaderName::from_static("x-frame-options"),
+        http::HeaderValue::from_static("DENY"),
+    );
+    headers.insert(
+        http::header::CACHE_CONTROL,
+        http::HeaderValue::from_static("no-store"),
+    );
+    headers.insert(
+        http::header::HeaderName::from_static("strict-transport-security"),
+        http::HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+    );
+    response
+}
+
 /// RED metrics middleware (E1.3) — records Rate, Error rate, Duration per endpoint.
 ///
 /// Labels: `method`, `path` (matched route pattern), `status` (HTTP status code).
@@ -845,6 +876,7 @@ pub fn build_router(state: AppState, auth_config: AuthConfig, metrics_enabled: b
         ))
         .layer(RequestBodyLimitLayer::new(2 * 1024 * 1024)) // 2 MiB max request body
         .layer(cors)
+        .layer(axum::middleware::from_fn(security_headers_middleware))
         .with_state(state)
 }
 

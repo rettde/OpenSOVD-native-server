@@ -94,7 +94,7 @@ SOVD Clients (HTTP/JSON)
 - **Vault Secrets** — Optional HashiCorp Vault KV v2 provider via `vault` feature flag
 - **WebSocket Bridge** — Optional `tokio-tungstenite` cloud↔vehicle tunnel via `ws-bridge` feature flag
 - **OTLP Tracing** — Optional OpenTelemetry export via `otlp` feature flag
-- **398+ tests**, Clippy pedantic clean, `#![forbid(unsafe_code)]` (except vSomeIP FFI)
+- **484 tests**, 81% line coverage, Clippy pedantic clean, `#![forbid(unsafe_code)]` (except vSomeIP FFI)
 
 ## Workspace Structure
 
@@ -119,9 +119,9 @@ All optional features are disabled by default to keep the dependency footprint m
 
 | Feature | Crate | Description |
 |---------|-------|-------------|
-| `persist` | native-core | Persistent fault/audit storage via embedded `sled` DB |
+| `persist` | native-core | **Experimental.** Persistent fault/audit storage via embedded `sled` DB (see [STABILITY.md](STABILITY.md)) |
 | `vault` | native-core | HashiCorp Vault KV v2 secret provider (auto-populates auth secrets) |
-| `ws-bridge` | native-core | WebSocket bridge transport via `tokio-tungstenite` |
+| `ws-bridge` | native-core | **Experimental.** WebSocket bridge transport via `tokio-tungstenite` (see [STABILITY.md](STABILITY.md)) |
 | `otlp` | native-server | OpenTelemetry OTLP trace export (Jaeger, Tempo, etc.) |
 | `systemd` | native-server | sd_notify integration: `READY=1`, `WATCHDOG=1`, `STOPPING=1` (Linux HPC) |
 | `vsomeip-ffi` | native-comm-someip | Real COVESA/vsomeip C FFI bindings (requires `libvsomeip3`) |

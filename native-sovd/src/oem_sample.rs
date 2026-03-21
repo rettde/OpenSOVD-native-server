@@ -494,9 +494,10 @@ mod tests {
         assert_eq!(p.invalid_token_status(), 401, "Standard: 401 Unauthorized");
         assert_eq!(p.invalid_token_error_code(), "SOVD-ERR-401");
 
-        // EntityIdPolicy: permissive (accepts anything)
+        // EntityIdPolicy: baseline safe charset [a-zA-Z0-9_.-]{1,128}
         assert!(p.validate_entity_id("any-id").is_ok());
-        assert!(p.validate_entity_id("with spaces!@#").is_ok());
+        assert!(p.validate_entity_id("comp_1.2").is_ok());
+        assert!(p.validate_entity_id("with spaces!@#").is_err());
 
         // DiscoveryPolicy: all entity types enabled
         assert!(p.areas_enabled());

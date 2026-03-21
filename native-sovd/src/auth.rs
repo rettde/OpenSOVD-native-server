@@ -575,6 +575,10 @@ struct JwksKey {
 /// JWKS cache TTL (5 minutes)
 const JWKS_CACHE_TTL_SECS: u64 = 300;
 
+/// Maximum number of keys accepted from a JWKS endpoint.
+/// Prevents memory exhaustion from malicious discovery documents.
+const JWKS_MAX_KEYS: usize = 64;
+
 struct JwksCacheEntry {
     keys: JwksKeySet,
     issuer: Option<String>,
@@ -666,6 +670,17 @@ async fn fetch_jwks_cached(issuer_url: &str) -> Result<(JwksKeySet, Option<Strin
                 &format!("JWKS parse failed: {e}"),
             )
         })?;
+
+    // Enforce key count limit to prevent memory exhaustion from oversized JWKS
+    let mut jwks = jwks;
+    if jwks.keys.len() > JWKS_MAX_KEYS {
+        warn!(
+            count = jwks.keys.len(),
+            max = JWKS_MAX_KEYS,
+            "JWKS key count exceeds limit, truncating"
+        );
+        jwks.keys.truncate(JWKS_MAX_KEYS);
+    }
 
     let issuer = discovery.issuer.clone();
     *guard = Some(JwksCacheEntry {

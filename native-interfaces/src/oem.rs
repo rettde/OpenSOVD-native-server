@@ -82,10 +82,25 @@ pub trait EntityIdPolicy: Send + Sync {
     ///
     /// Return `Ok(())` to accept, `Err(reason)` to reject with 400 Bad Request.
     ///
-    /// Default: accept any non-empty string (standard SOVD behavior).
+    /// Default: accept `[a-zA-Z0-9_.-]{1,128}` (safe for URL interpolation,
+    /// prevents path traversal and injection). OEM profiles may tighten further.
     fn validate_entity_id(&self, id: &str) -> Result<(), String> {
         if id.is_empty() {
             return Err("Entity ID must not be empty".to_owned());
+        }
+        if id.len() > 128 {
+            return Err(format!(
+                "Entity ID exceeds maximum length of 128 (got {})",
+                id.len()
+            ));
+        }
+        if !id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.')
+        {
+            return Err(format!(
+                "Entity ID contains invalid characters: '{id}' (allowed: a-z A-Z 0-9 _ - .)"
+            ));
         }
         Ok(())
     }
