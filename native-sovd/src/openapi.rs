@@ -792,6 +792,7 @@ fn rxswin_paths() -> serde_json::Value {
             }
         },
         "/rxswin/report": {
+            "x-sovd-name": "RXSWINReport",
             "get": {
                 "tags": ["RXSWIN"],
                 "summary": "Vehicle-level RXSWIN report",
@@ -803,6 +804,7 @@ fn rxswin_paths() -> serde_json::Value {
             }
         },
         "/rxswin/{component_id}": {
+            "x-sovd-name": "RXSWINComponent",
             "get": {
                 "tags": ["RXSWIN"],
                 "summary": "Get RXSWIN for a specific component",
@@ -814,6 +816,7 @@ fn rxswin_paths() -> serde_json::Value {
             }
         },
         "/update-provenance": {
+            "x-sovd-name": "UpdateProvenance",
             "get": {
                 "tags": ["RXSWIN"],
                 "summary": "Update provenance log (UNECE R156 §7.1)",
@@ -832,6 +835,7 @@ fn rxswin_paths() -> serde_json::Value {
 fn tara_paths() -> serde_json::Value {
     serde_json::json!({
         "/tara/assets": {
+            "x-sovd-name": "TARAAssets",
             "get": {
                 "tags": ["TARA"],
                 "summary": "List TARA asset inventory (ISO/SAE 21434)",
@@ -843,6 +847,7 @@ fn tara_paths() -> serde_json::Value {
             }
         },
         "/tara/threats": {
+            "x-sovd-name": "TARAThreats",
             "get": {
                 "tags": ["TARA"],
                 "summary": "List TARA threat entries",
@@ -854,6 +859,7 @@ fn tara_paths() -> serde_json::Value {
             }
         },
         "/tara/export": {
+            "x-sovd-name": "TARAExport",
             "get": {
                 "tags": ["TARA"],
                 "summary": "Full TARA export document",
@@ -872,6 +878,7 @@ fn tara_paths() -> serde_json::Value {
 fn uds_security_paths() -> serde_json::Value {
     serde_json::json!({
         "/x-uds/components/{component_id}/security-levels": {
+            "x-sovd-name": "UdsSecurityLevels",
             "get": {
                 "tags": ["UDS-Security"],
                 "summary": "List UDS security levels for component (ISO 14229 §9)",
@@ -883,6 +890,7 @@ fn uds_security_paths() -> serde_json::Value {
             }
         },
         "/x-uds/components/{component_id}/security-access": {
+            "x-sovd-name": "UdsSecurityAccess",
             "post": {
                 "tags": ["UDS-Security"],
                 "summary": "UDS Security Access seed/key protocol (0x27)",
@@ -906,6 +914,7 @@ fn uds_security_paths() -> serde_json::Value {
 fn ucm_paths() -> serde_json::Value {
     serde_json::json!({
         "/ucm/campaigns": {
+            "x-sovd-name": "UcmCampaigns",
             "get": {
                 "tags": ["UCM"],
                 "summary": "List UCM campaigns",
@@ -930,6 +939,7 @@ fn ucm_paths() -> serde_json::Value {
             }
         },
         "/ucm/campaigns/{campaign_id}": {
+            "x-sovd-name": "UcmCampaign",
             "get": {
                 "tags": ["UCM"],
                 "summary": "Get UCM campaign detail",
@@ -941,6 +951,7 @@ fn ucm_paths() -> serde_json::Value {
             }
         },
         "/ucm/campaigns/{campaign_id}/execute": {
+            "x-sovd-name": "UcmCampaignExecute",
             "post": {
                 "tags": ["UCM"],
                 "summary": "Execute UCM campaign",
@@ -952,6 +963,7 @@ fn ucm_paths() -> serde_json::Value {
             }
         },
         "/ucm/campaigns/{campaign_id}/rollback": {
+            "x-sovd-name": "UcmCampaignRollback",
             "post": {
                 "tags": ["UCM"],
                 "summary": "Rollback UCM campaign",

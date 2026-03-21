@@ -1549,7 +1549,8 @@
         "tags": [
           "RXSWIN"
         ]
-      }
+      },
+      "x-sovd-name": "RXSWINReport"
     },
     "/rxswin/{component_id}": {
       "get": {
@@ -1580,7 +1581,8 @@
         "tags": [
           "RXSWIN"
         ]
-      }
+      },
+      "x-sovd-name": "RXSWINComponent"
     },
     "/tara/assets": {
       "get": {
@@ -1619,7 +1621,8 @@
         "tags": [
           "TARA"
         ]
-      }
+      },
+      "x-sovd-name": "TARAAssets"
     },
     "/tara/export": {
       "get": {
@@ -1650,7 +1653,8 @@
         "tags": [
           "TARA"
         ]
-      }
+      },
+      "x-sovd-name": "TARAExport"
     },
     "/tara/threats": {
       "get": {
@@ -1689,7 +1693,8 @@
         "tags": [
           "TARA"
         ]
-      }
+      },
+      "x-sovd-name": "TARAThreats"
     },
     "/ucm/campaigns": {
       "get": {
@@ -1782,7 +1787,8 @@
         "tags": [
           "UCM"
         ]
-      }
+      },
+      "x-sovd-name": "UcmCampaigns"
     },
     "/ucm/campaigns/{campaign_id}": {
       "get": {
@@ -1813,7 +1819,8 @@
         "tags": [
           "UCM"
         ]
-      }
+      },
+      "x-sovd-name": "UcmCampaign"
     },
     "/ucm/campaigns/{campaign_id}/execute": {
       "post": {
@@ -1844,7 +1851,8 @@
         "tags": [
           "UCM"
         ]
-      }
+      },
+      "x-sovd-name": "UcmCampaignExecute"
     },
     "/ucm/campaigns/{campaign_id}/rollback": {
       "post": {
@@ -1875,7 +1883,8 @@
         "tags": [
           "UCM"
         ]
-      }
+      },
+      "x-sovd-name": "UcmCampaignRollback"
     },
     "/update-provenance": {
       "get": {
@@ -1914,7 +1923,8 @@
         "tags": [
           "RXSWIN"
         ]
-      }
+      },
+      "x-sovd-name": "UpdateProvenance"
     },
     "/updates": {
       "get": {
@@ -2004,7 +2014,8 @@
         "tags": [
           "UDS-Security"
         ]
-      }
+      },
+      "x-sovd-name": "UdsSecurityAccess"
     },
     "/x-uds/components/{component_id}/security-levels": {
       "get": {
@@ -2043,7 +2054,8 @@
         "tags": [
           "UDS-Security"
         ]
-      }
+      },
+      "x-sovd-name": "UdsSecurityLevels"
     }
   },
   "security": [

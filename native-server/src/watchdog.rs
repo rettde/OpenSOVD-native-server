@@ -46,18 +46,17 @@ pub fn spawn_watchdog_task() {
     #[cfg(feature = "systemd")]
     {
         // systemd sets WATCHDOG_USEC (microseconds) when WatchdogSec is configured
-        let watchdog_usec = match std::env::var("WATCHDOG_USEC") {
-            Ok(val) => match val.parse::<u64>() {
+        let watchdog_usec = if let Ok(val) = std::env::var("WATCHDOG_USEC") {
+            match val.parse::<u64>() {
                 Ok(us) if us > 0 => us,
                 _ => {
                     tracing::debug!("sd_notify: WATCHDOG_USEC not parseable, watchdog disabled");
                     return;
                 }
-            },
-            Err(_) => {
-                tracing::debug!("sd_notify: WATCHDOG_USEC not set, watchdog disabled");
-                return;
             }
+        } else {
+            tracing::debug!("sd_notify: WATCHDOG_USEC not set, watchdog disabled");
+            return;
         };
 
         // Send heartbeat at half the watchdog interval (systemd recommendation)

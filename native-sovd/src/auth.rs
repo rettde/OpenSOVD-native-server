@@ -1375,8 +1375,7 @@ HlISSA80CY9hF8NIzg/eLW3M
         };
         let mut header = jsonwebtoken::Header::new(Algorithm::RS256);
         header.kid = Some("test-key-1".into());
-        let token =
-            jsonwebtoken::encode(&header, &expired_claims, &encoding_key).expect("encode");
+        let token = jsonwebtoken::encode(&header, &expired_claims, &encoding_key).expect("encode");
 
         // Validate — should fail
         let key = &keyset.keys[0];
