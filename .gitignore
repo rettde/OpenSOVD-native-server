@@ -47,3 +47,4 @@ package-lock.json
 
 # CDF validator (separate tool)
 /sovd-cdf-validator/
+.opensovd-core/
