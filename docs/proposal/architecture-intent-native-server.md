@@ -15,7 +15,7 @@ Der aktuelle `opensovd-native-server` hat in kurzer Zeit viel Funktionalität ge
 Das hat geholfen, offene Fragen sichtbar zu machen, aber auch zu Unschärfen geführt:
 Was ist hier eigentlich der intendierte Kern — ein SOVD-Server, ein Gateway, ein CDA-naher Adapter oder ein Sammelbecken für alle diagnostischen Themen?
 
-Dieses Dokument zieht deshalb bewusst eine Grenze ein. Es ist **keine Marketingbeschreibung** und **keine Verteidigung des aktuellen Umfangs**. Es ist ein menschlich formulierter Vorschlag dafür,
+Dieses Dokument zieht deshalb bewusst eine Grenze ein. Es ist **keine Marketingbeschreibung** und **keine Verteidigung des aktuellen Umfangs**. Es ist ein formulierter Vorschlag dafür,
 
 - welche Rolle ein `native-server` im OpenSOVD-Umfeld haben sollte,
 - wie er sich von **SOVD-Server**, **SOVD-Gateway** und **Classic Diagnostic Adapter (CDA)** abgrenzt,
